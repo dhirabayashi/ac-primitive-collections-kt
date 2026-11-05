@@ -29,7 +29,7 @@
 
 ### ソート時間(ランダムデータ)
 
-`first` は 1 回目、`min` は複数回の最小値です(200,000 要素は 5 回、5,000,000 要素は 3 回)。
+`first` は 1 回目、`min` は複数回の最小値です(200,000 要素は 5 回、5,000,000 要素は 3 回)。5,000,000 要素は 200,000 要素の後に実行しているので、`first` はコールドスタートの値ではありません。
 
 | 対象 | 200,000 要素 first / min | 5,000,000 要素 first / min |
 |---|---|---|
@@ -37,6 +37,37 @@
 | `LongArray`、`Arrays.sort` | 53 / 4 ms | 78 / 74 ms |
 | `LongArray`、8 bit 基数ソート | 62 / 5 ms | 167 / 167 ms |
 | `DoubleArray`、`Arrays.sort` | 60 / 4 ms | 112 / 76 ms |
+
+### 生ログ
+
+```
+kotlin=2.2.10 java=23.0.2 vm=OpenJDK 64-Bit Server VM
+os=Linux arch=amd64
+args=[-Xss1024M, -DONLINE_JUDGE=true]
+processors=1 maxMemoryMiB=922
+gc=[Copy, MarkSweepCompact]
+vm.UseAVX=3
+vm.UseSSE=4
+vm.MaxHeapSize=1000341504
+vm.InitialHeapSize=62914560
+vm.ThreadStackSize=1048576
+vm.CICompilerCount=2
+vm.TieredCompilation=true
+vm.DontCompileHugeMethods=true
+cpu=Intel(R) Xeon(R) Platinum 8488C
+cpuFlags=[avx, avx2, avx512f, avx512dq, bmi2]
+memTotal=MemTotal:        3905688 kB
+cgroupMemoryMax=null
+cgroupCpuMax=null
+sort label=int-Arrays.sort n=200000 firstMs=51 minMs=5
+sort label=long-Arrays.sort n=200000 firstMs=53 minMs=4
+sort label=long-radix8 n=200000 firstMs=62 minMs=5
+sort label=double-Arrays.sort n=200000 firstMs=60 minMs=4
+sort label=int-Arrays.sort n=5000000 firstMs=170 minMs=37
+sort label=long-Arrays.sort n=5000000 firstMs=78 minMs=74
+sort label=long-radix8 n=5000000 firstMs=167 minMs=167
+sort label=double-Arrays.sort n=5000000 firstMs=112 minMs=76
+```
 
 ## 2. ヒープ上限の再現実験(ローカル)
 
@@ -55,7 +86,18 @@
 | `IntArray` を 1.5 倍ずつ拡張 | 331 MiB(約 8700 万要素)まで。497 MiB への拡張で失敗 |
 | `IntArray` を 1.25 倍ずつ拡張 | 345 MiB(約 9000 万要素)まで。431 MiB への拡張で失敗 |
 
-## 3. 分かったこと
+## 3. コンパイル時間の参考値(ローカル)
+
+Apple M1、1 プロセッサ、ヒープ 512 MB で、単純なクラスを繰り返した合成コードをコンパイルした値です。別のエージェントによる検証時の計測で、再現は確認していません。ジャッジの値ではないので、増え方の目安にとどめます。
+
+| ソースサイズ | コンパイル時間 |
+|---|---|
+| 最小(`main` のみ) | 2.5 秒 |
+| 32 KiB | 4.8 秒 |
+| 128 KiB | 7.4 秒 |
+| 512 KiB | 13.9 秒 |
+
+## 4. 分かったこと
 
 1. **Long / Double の自然順ソートは `Arrays.sort` を使います。** 5,000,000 要素の Long で `Arrays.sort` は基数ソートの 2 倍以上速く、採用条件を満たしません。ローカル(arm64)の結果とは逆でした。
 2. **コールドスタートの影響が大きいです。** 200,000 要素の 1 回目は最小値の約 10 倍かかります。プロセッサが 1 個なので、JIT コンパイルと本体が同じ CPU を取り合います。1 回実行の時間を重視して計測します。

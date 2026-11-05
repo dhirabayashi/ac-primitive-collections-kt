@@ -6,7 +6,7 @@ import kotlin.test.assertEquals
 
 class JudgeToolchainTest {
     @Test
-    fun kotlinRuntimeMatchesJudge() {
+    fun kotlinStdlibMatchesJudge() {
         assertEquals("2.2.10", KotlinVersion.CURRENT.toString())
     }
 
