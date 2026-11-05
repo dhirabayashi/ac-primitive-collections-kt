@@ -1,0 +1,922 @@
+# ac-primitive-collections-kt 計画書
+
+- 作成日: 2026-11-05
+- 状態: Phase 0(環境固定と実測)
+- 対象: AtCoder の Kotlin 言語環境で使う、プリミティブ型特化コレクションライブラリ
+
+---
+
+## 1. 目的と成功条件
+
+### 1.1 本来の目的
+
+AtCoder の Kotlin 提出で、**ボクシングが原因の TLE / MLE をなくすこと**。
+
+クラスをそろえるだけでは目的を達成できません。典型的なボトルネックを、書きやすいコードのまま解消できる必要があります。実際にボクシングが起きやすいのは次の箇所です。
+
+| よくあるコード | 問題 | 本ライブラリでの解決 |
+|---|---|---|
+| `PriorityQueue<Pair<Long, Int>>`(Dijkstra) | `Pair` と `Long` / `Int` を毎回確保 | `LongIntMinHeap` |
+| `Array(n) { mutableListOf<Int>() }`(隣接リスト) | 要素ごとのボクシング、参照の間接化 | `CsrGraph`、`IntList` |
+| `HashMap<Int, Int>`(カウンタ) | キーと値のボクシング、Node の確保 | `IntIntHashMap.addTo(k, 1)` |
+| `TreeMap<Int, Int>` / `TreeSet<Int>` | 同上。さらに k 番目や rank の取得ができない | `IntIntTreeMap`、`IntTreeSet.kth()` |
+| `indices.sortedBy { a[it] }` | `List<Int>` と比較のボクシング | `a.argsortBy { it }` |
+| `HashSet<Pair<Int, Int>>`(グリッド) | `Pair` の確保 | `IntPair` + `LongHashSet` |
+
+### 1.2 成功条件(計測できる形で定義)
+
+| # | 条件 | 検証方法 |
+|---|---|---|
+| S1 | ライブラリと代表的な利用コードの**どちらのバイトコードにもボクシング呼び出しがない** | ASM による静的検査(§7.3) |
+| S2 | ウォームアップ後のホットパスで確保量がゼロ(拡張時を除く) | スレッド確保量の計測テスト(§7.3) |
+| S3 | **現行ジャッジで、1 ファイルに貼って提出できる**(これが主な利用形態) | バンドラ(§8)、AtCoder への実提出 |
+| S4 | バンドル後のコードが**現行ジャッジと同一のコマンド**でコンパイル・実行でき、テスト済みの動作と一致する | E2E(§7.5)、AtCoder コードテスト |
+| S5 | 既存の代替手段より遅くない(`java.util` に対して必ず優位、fastutil と同等以上を目標) | JMH(§7.6) |
+| S6 | 生成 AI ルールとライセンスの両方に適合する | §9、§10 のチェックリスト |
+| S7 | 差分テストと変異テストの基準を満たす | §7 の品質ゲート |
+| S8 | リリースごとに、ジャッジへのインストールを提案できる状態を保つ | jar 方式の E2E、インストール手順のリハーサル(§1.4) |
+
+### 1.3 スコープ外
+
+- ACL(ac-library-java)と重複するもの: セグメント木、DSU、FFT など
+- スレッドセーフ性: ジャッジでは並列化しても実行時間が縮まないため(§2.1)
+- `List<Int>`、`Iterable<Int>` などの実装(§4.6 の理由により意図的に行わない。変換は提供する)
+- Kotlin Multiplatform / Native: ジャッジは JVM のみ
+- 高速入出力: 有用だが別テーマ。v1 以降に別モジュールとして検討
+- **作者本人が AtCoder で使う以外の用途**: 他者の利用は妨げないが、サポート、互換性の保証、他者向けの文書整備はしない
+- Maven Central などのパッケージレジストリへの公開
+- Java など Kotlin 以外の言語からの利用: 手元で Kotlin stdlib をクラスパスに通せば動く範囲で使えるが、動作確認やサポートはしない。ジャッジへのインストールも Kotlin のエントリのみを対象とする
+
+### 1.4 利用形態の目標
+
+**最終目標は、次回の言語アップデートで提案してジャッジにインストールし、`import` だけで使えるようにすることです。** 貼り付けは不便なので、それまでの暫定手段と位置づけます。
+
+| 時期 | 利用形態 | 対象環境 |
+|---|---|---|
+| 当面 | バンドラで貼り付け | 現行ジャッジ(Kotlin 2.2.10、JDK 23.0.2) |
+| 次回アップデート以降(目標) | `import` のみ | その時点の環境(時期とバージョンは不明) |
+
+この目標のため、最初から次を守ります。
+
+- **移行時にコードを書き換えない:** 利用者のコードは `import` で書き、貼り付け時はバンドラが展開します。導入後はバンドラを通さず、同じコードをそのまま提出できるようにします。
+- **jar も本番品質にする:** 全ゲートの対象とし、リリースごとに公開します。実行時依存なし、Kotlin stdlib は同梱しません。
+- **提案の材料を継続的に用意する:** インストールスクリプトの案とリハーサルをリポジトリと CI で維持し、jar のサイズ、コンパイル時間、起動時間への影響も毎リリース記録します。
+- **特定のバージョンに縛られない:** JDK の内部 API、プレビュー機能、Kotlin の実験的機能に依存しません。これにより、新環境でも再ビルドと再検証で済むようにします。将来のバージョン向けの先回りの作業まではしません。
+
+---
+
+## 2. 調査で確認した前提
+
+### 2.1 ジャッジ環境(公式の言語一覧と install TOML で確認)
+
+| 項目 | 内容 |
+|---|---|
+| 言語 | `Kotlin (Kotlin/JVM 2.2.10)` |
+| JDK | OpenJDK 23.0.2 |
+| コンパイル | `kotlinc ./Main.kt -cp ac_library.jar:kotlinx-collections-immutable-jvm.jar -include-runtime -jvm-target 23 -d ./Main.jar` |
+| 実行 | `java -Xss{min(メモリ制限MB,1024)}M -DONLINE_JUDGE=true -cp ac_library.jar:kotlinx-collections-immutable-jvm.jar:Main.jar MainKt` |
+| ヒープ指定 | **`-Xmx` なし**(JVM の既定値に従う)。実測で `maxMemory()` は **922 MiB** |
+| CPU、GC(コードテストで実測) | プロセッサ **1 個**、**Serial GC**、Xeon Platinum 8488C(AVX-512 有効)。詳細は `docs/judge-env.md` |
+| 導入済みライブラリ | ac-library-java v2.0.0(CC0-1.0)、kotlinx-collections-immutable 0.4.0(Apache-2.0) |
+| 時間計測 | **実時間と CPU 時間の大きい方**。並列化しても短くならない |
+| MLE | 超過時点で強制終了(新ジャッジ) |
+
+### 2.2 ライブラリ導入の手続き
+
+- インストール依頼は言語アップデートの枠組みで、公式 Discord の「インストール依頼」チャンネルから行います。依頼内容は基本的にそのまま機械的に実行され、**導入は保証されません**。
+- 公式のお問い合わせページには、言語の追加や更新は個別対応しないとあります。
+- **現行ジャッジには導入できません。** 導入できるのは次回の言語アップデートで、時期は未定(数年先の可能性あり)です。その時点の Kotlin / JDK のバージョンも分かりません。
+- したがって、当面の開発は現行ジャッジ(§2.1)に合わせ、将来のバージョンを先取りした対応はしません。
+
+### 2.3 生成 AI ルール(20261014 版、ABC / ARC / AGC に適用)
+
+事前に生成 AI で作成したコードは、次の両方を満たせば使えます。
+
+1. コンテスト開始前に Web 上に公開する(第三者が内容とタイムスタンプを確認できること)
+2. コピーして使うときは参照 URL を添付する
+
+他人が AI で作成したコードにも同じ条件が適用され、**知らずに出典なしでコピーした場合も違反**です。難読化も禁止されています。バイナリ化して埋め込むコードは、2026/10/20 以降、元コードを確認できるようにする必要があります。
+
+### 2.4 既存ライブラリ
+
+| ライブラリ | jar サイズ(Maven Central で実測) | 評価 |
+|---|---|---|
+| fastutil 8.5.15 | 23.7 MB | 豊富だが巨大で貼り付け不可。`java.util` 互換の API はボクシング経路を含む |
+| Eclipse Collections 11.1.0 | 10.5 MB(別途 API jar が必要) | 同上 |
+| HPPC 0.10.0 | 1.5 MB | 軽量。ただしツリーや順序統計はない |
+
+いずれも Kotlin 向けの API ではなく、順序統計付きのツリーやペアヒープもありません。**自作する価値はありますが、性能の比較基準として fastutil と HPPC を使います。**
+
+---
+
+## 3. 主要な設計判断
+
+| 判断 | 理由 | 詳細 |
+|---|---|---|
+| 自然順ソートは `Arrays.sort` に委譲 | JDK のプリミティブソートは既に特化されており、ジャッジの実測で基数ソートより速い。比較関数付きソートと argsort に注力する | §6 |
+| 貼り付け提出から始め、次回の言語アップデートでインストールを提案 | 現行ジャッジには導入できない | §1.4、§8 |
+| ボクシングの不在を CI で検証 | `Int?`、ジェネリクス、非 inline ラムダのどれか 1 つで混入し、目視では防げない | §7.3 |
+| テストの品質を測定可能な基準で定義 | カバレッジ、変異スコア、差分テスト、実問題で判定し、残るリスクも明記する | §7.1 |
+| 利用頻度に基づく型行列 | 全組み合わせは数百クラスになり、大半は使われない | §5.1 |
+| 生成コードの公開と参照 URL の自動付与 | 生成 AI ルール(§2.3)の条件を満たすため | §9 |
+| ビルドの Kotlin と JDK をジャッジに合わせる | コンパイラが違うとバイトコードも変わる | §11 Phase 0 |
+| キー + ペイロードのヒープ、インデックス付きヒープ | Dijkstra で頻繁に起きるボクシングを解消する | §5.5 |
+| 順序統計(`kth`、`rank`)、多重集合 | `TreeSet` にない機能で、AtCoder での需要が高い | §5.7 |
+| `IntPair`、CSR グラフ、ビットセット、FastSet、座標圧縮 | 周辺で起きるボクシングや `java.util` の機能不足を解消する | §5.8 |
+| `Int?` を返さない API | `Int?` はボクシングする | §4.3 |
+| MinHeap / MaxHeap を個別に生成 | 符号反転で最大ヒープを作ると `Int.MIN_VALUE` で壊れる | §5.5 |
+| メモリ使用量と CPU 時間の管理 | GC や JIT の CPU 時間も実行時間に計上され、MLE は即時終了になる | §7.6 |
+
+---
+
+## 4. 設計原則
+
+### 4.1 オーバーヘッドなしで許可する抽象化
+
+| 手段 | 判定 | 備考 |
+|---|---|---|
+| コード生成 | ○ | 実行時コストなし。重複排除の主手段 |
+| `inline fun` + ラムダ | ○ | 下記の制約に注意 |
+| final クラス、static な関数 | ○ | |
+| `@JvmInline value class`(非ジェネリック文脈のみ) | ○ | `IntPair` など。`List<IntPair>` にするとボクシングする |
+| 非ジェネリックな `fun interface`(`IntComparator`) | △ | ボクシングはしないが仮想呼び出しになる。比較関数付きの API に限定 |
+| `T`、`Comparable<T>`、`(Int) -> Int` の保持 | × | ボクシングする |
+| `Iterable<Int>`、`Collection<Int>`、`Sequence<Int>`、`Pair` | × | ボクシングする |
+| 共通インターフェースを介したホットパス | × | v1 では定義しない |
+
+### 4.2 `inline` の落とし穴
+
+- **再帰できません。** inline 関数は再帰呼び出しができないため、ソートなどをそのまま inline 化できません。
+- **巨大メソッドは JIT されません。** `DontCompileHugeMethods=true`(既定)のため、8000 バイトコードを超えるメソッドはコンパイルされず、極端に遅くなります。大きな inline を展開すると、利用者の `main` がこの上限を超えるおそれがあります。
+  - 対策: inline 関数は薄く保ち、本体は通常の関数に分離します。`forEach` のような短いものに限定し、サイズを CI で監視します(§7.3)。
+- **public inline は内部を公開します。** 参照先は `@PublishedApi internal` にする必要があります。
+
+### 4.3 「値がない」の表現
+
+`Int?` はボクシングするため、`*OrNull` は**提供しません**。統一パターンは次のとおりです。
+
+```kotlin
+// 1. 例外(空・不在はバグとして扱う場合)
+list.last(); set.floor(x)
+// 2. 既定値
+map.getOrDefault(k, -1); set.floorOrDefault(x, -1)
+// 3. inline ラムダ
+map.getOrElse(k) { compute() }; set.floorOrElse(x) { return }
+// 4. 存在確認とカーソル(二重探索を避ける)
+if (k in map) { /* ... */ }
+val c = map.findSlot(k); if (c >= 0) map.valueAt(c)
+```
+
+**Map の `map[k]` は例外にせず、キーがなければ値型のゼロ値を返します。** HashMap と TreeMap の全組み合わせで共通です。
+
+| 値の型 | キーがないときの `map[k]` |
+|---|---|
+| `Int`、`Long`、`Char` など | `0`(`Char` は `'\u0000'`) |
+| `Double`、`Float` | `0.0` |
+| `Boolean` | `false` |
+| `Obj`(`V`) | `null`(戻り値の型は `V?`。参照型なのでボクシングは発生しない) |
+
+- `map[k]` を読んでもエントリは追加されません(C++ の `operator[]` とは異なります)。
+- 値 0 が入っている場合とキーがない場合は `map[k]` では区別できないので、KDoc で明記し、区別が必要なら `k in map`、`containsKey`、`findSlot` を使うよう案内します。
+
+同じ理由で、`put` は古い値を返しません。`remove(k): Boolean`、`removeOrDefault(k, d)`、`putIfAbsent(k, v): Boolean` に分けます。
+
+### 4.4 `Double` / `Float` の意味論
+
+テンプレートの共通化で最もバグが入りやすい箇所です。
+
+| 演算 | IEEE(`<`、`==`) | 全順序(`compareTo`、`equals`) |
+|---|---|---|
+| `NaN == NaN` | false | true |
+| `0.0 == -0.0` | true | false |
+
+本ライブラリは**全順序に統一**し、`java.util` および `Arrays.sort` と揃えます。テンプレートでは `<` や `==` を直接書かず、型ごとに展開されるマクロ(`K_LT`、`K_EQ`)を使います。
+
+### 4.5 整数オーバーフロー対策のカタログ
+
+以下は CI の禁止パターン検査と境界値テストの対象です。
+
+| 箇所 | NG | OK |
+|---|---|---|
+| 中点 | `(lo + hi) / 2` | `(lo + hi) ushr 1`(Int の添字)、`lo + (hi - lo) / 2` |
+| 比較 | `a - b` | `a.compareTo(b)` |
+| 容量拡張 | `cap * 2`、`cap + cap / 2` | Long で計算し上限で丸める共通関数 `nextCapacity` |
+| 上限 | `Int.MAX_VALUE` の配列を確保 | 上限 `Int.MAX_VALUE - 8`。超過時は明示的な例外 |
+| 合計 | `Int` の和を `Int` で返す | `sum(): Long`。`Long` の和はラップすると明記 |
+| 長さ | `(hi - lo).toInt()`、`hi - lo + 1` | Long で計算し、範囲外なら例外 |
+| シフト | `1 shl i`(i ≥ 32) | `1L shl i`。シフト量を検証 |
+| 負の剰余 | `h % n` | `h and (n - 1)`、`Math.floorMod` |
+| 反転 | `-x`、`abs(x)` | Max 版を生成する。`Int.MIN_VALUE` で壊れるため |
+| パック | `(a.toLong() shl 32) or b.toLong()` | 下位側は `and 0xFFFFFFFFL`。符号拡張対策 |
+| 小さい型 | `Byte + Byte` は `Int` になる | テンプレートで明示的に変換 |
+| 自己参照 | `list.addAll(list)` | サイズを先に確定、または一時コピー |
+| 範囲引数 | `lo > hi` を未検証 | 全 API で検証 |
+| 添字 | capacity 内なら配列の境界検査を通過してしまう | `size` に対して明示的に検査 |
+
+### 4.6 標準コレクションとの相互運用
+
+**方針: 変換は用意する。型レベルの互換性(`List<Int>` などの実装)は持たせない。**
+
+| レベル | 内容 | 判定 |
+|---|---|---|
+| 1. 変換(コピー) | `toList()`、`toIntList()` など | **提供** |
+| 2. ビュー | `asList(): List<Int>`(別クラスのラッパー) | v1 では提供しない。実際に必要になったら追加 |
+| 3. 型レベルの互換 | `IntList : List<Int>` | **提供しない** |
+
+**型レベルの互換を持たせない理由**(Kotlin 2.2.10 + JDK 23 でバイトコードを確認済み)
+
+`AbstractList<Int>` を継承したクラスと、継承しないクラスを比較しました。
+
+| 利用コード | `List<Int>` を実装 | 実装しない |
+|---|---|---|
+| `get` のシグネチャ | **`Integer get(int)`** | `int get(int)` |
+| `l[i]` | **`Integer.intValue` を呼ぶ** | ボクシングなし |
+| `for (x in l)` | **`java.util.Iterator` + `Number.intValue`** | `IntIterator.nextInt()` |
+| `l.filter { }.sum()` | **ボクシングしたままコンパイルが通る** | コンパイルエラー(専用メンバーを使う) |
+
+- `l[i]` のような基本操作まで、実装するだけでボクシングする経路に変わります。本ライブラリの目的と両立しません。
+- 標準の拡張関数がすべて使えるようになるので、専用メンバーがない操作は**警告なしで**ボクシングします。実装しなければコンパイルエラーになり、ボクシングに気づけます。
+
+**提供する変換**(いずれもコピーで、ビューではありません)
+
+| 方向 | API |
+|---|---|
+| 標準コレクションへ | `IntList` / `IntDeque` → `toList()`、`toMutableList()`。`IntHashSet` / `IntTreeSet` → `toSet()`、`toMutableSet()`。`IntIntHashMap` / `IntIntTreeMap` → `toMap()`、`toMutableMap()`。ヒープ → `toUnorderedList()`、`toSortedList()` |
+| 標準コレクションから | `Iterable<Int>.toIntList()`、`Iterable<Int>.toIntHashSet()`、`Iterable<Int>.toIntTreeSet()`、`Map<Int, Int>.toIntIntHashMap()`、`Map<Int, Int>.toIntIntTreeMap()` など。`addAll(Iterable<Int>)` |
+| 配列・範囲から(ボクシングなし) | `IntArray.toIntList()`、`IntRange.toIntList()` など。ACL は配列を受け取るので、`toIntArray()` と合わせて最も重要な経路 |
+
+順序の仕様:
+
+- `TreeSet` / `TreeMap` の変換は昇順を保ち、`LinkedHashSet` / `LinkedHashMap` を返します。
+- `HashSet` / `HashMap` の変換の順序は不定です。
+
+**同じ型どうしの `equals` のみ** `true` を返します。`IntList` と `List<Int>` を比較したい場合は `toList()` で揃えます。`equals` の対称性を保つためです。
+
+### 4.7 可変と不変
+
+**全コレクションを可変の final クラス 1 種類にします。**
+
+| 案 | 判定 | 理由 |
+|---|---|---|
+| 可変のみ(`IntList`) | **採用** | クラス数とバンドルサイズを増やさず、呼び出しも直接のまま |
+| 読み取り専用の型を追加(`IntList` + `MutableIntList`) | 不採用 | 継承やインターフェースで呼び出し経路が増え、クラスも倍増する。共有バグを防ぐ利点は、短い単一ファイルの提出では小さい |
+| 不変クラス | 不採用 | 更新ごとの全コピーは競技用途に合わない。不変にしたいだけなら、変更しなければ足りる |
+| 永続データ構造 | スコープ外 | 別の種類のデータ構造で、必要なら別途検討 |
+
+- 命名は Kotlin 標準(`List` は読み取り専用、`MutableList` は可変)と異なり、`IntList` が可変です。標準の `IntArray` が可変であることに合わせます。
+- 独立したコピーが必要なときは `copy()` を使います。`toList()` などの変換もコピーを返します(§4.6)。
+
+### 4.8 Kotlin らしい書き方
+
+Kotlin の演算子と慣用表現を一通りサポートします。**標準コレクションから書き換えるときに、なるべく同じ書き方で済むようにします。** いずれもボクシングなしで実装し、§7.3 の検査対象にします。
+
+| 記法 | 対象 | 意味 |
+|---|---|---|
+| `a[i]`、`a[i] = v` | List、Deque、BitSet | 添字アクセス |
+| `m[k]`、`m[k] = v` | Map | 取得(不在時はゼロ値)、設定 |
+| `a[i] += x`、`a[i]++`、`m[k] += x`、`m[k]++` | 同上 | `get` + `set` に展開される |
+| `x in c`、`x !in c` | List、Deque、Set、Multiset、BitSet、FastSet | 要素の存在確認 |
+| `k in m`、`k !in m` | Map | キーの存在確認 |
+| `a + x`、`a + b` | List、Deque、Set、Multiset | 要素や別のコレクションを加えた**新しい**コレクション |
+| `m + other` | Map | 同上(同じキーは右側を優先) |
+| `a - x`、`a - b` | List、Deque、Set、Multiset | 除いた**新しい**コレクション(List の `- x` は標準と同じく最初の 1 個のみ) |
+| `m - k` | Map | キーを除いた新しい Map |
+| `a += x`、`a -= x` | 上記の可変版 + ヒープの `+=` | その場で変更 |
+| `s1 union s2`、`intersect`、`subtract` | Set | 集合演算 |
+| `b1 and b2`、`or`、`xor`、`shl`、`shr`、`inv()` | BitSet | ビット演算 |
+| `for (x in c)` | List、Deque、Set、BitSet、FastSet | 反復 |
+| `for ((k, v) in m)` | Map | 反復(カーソル方式、下記) |
+| `val (a, b) = pair` | `IntPair` | 分解 |
+| `val (a, b) = list` | List | 先頭要素の分解(`component1`〜`component5`) |
+
+**慣用的な名前も標準に揃えます**
+
+- プロパティ: `size`、`indices`、`lastIndex`
+- 判定: `isEmpty()`、`isNotEmpty()`
+- 生成: `intListOf(1, 2, 3)`、`IntList(n) { it * 2 }`、`buildIntList { add(1) }`、`intHashSetOf(...)`、`intTreeSetOf(...)`
+- 新しいコレクションを返す: `sorted()`、`sortedDescending()`、`reversed()`、`distinct()`、`take()`、`drop()`、`map {}`、`filter {}`
+- 文字列: `joinToString()`、`toString()`(`[1, 2, 3]`、`{1=2}`。標準と同じ形式)
+
+**意図的に提供しないもの**(いずれもボクシングまたは `Pair` が必要になるため)
+
+- `*OrNull`(`firstOrNull` など)。代わりは §4.3
+- `withIndex()`。代わりは `forEachIndexed`
+- `mapOf(1 to 2)` 形式の生成、`m += (k to v)`。代わりは `m[k] = v`
+- `keys`、`values`、`entries` プロパティ。代わりは `forEachKey`、`keysToArray()` など
+
+**実験で確認した点**(Kotlin 2.2.10 + JDK 23)
+
+| 項目 | 結果 |
+|---|---|
+| `[]`、`in`、`+`、`+=`、`m[k] += 1`、`m[k]++`、`IntPair` の分解 | ボクシングなし |
+| `for ((k, v) in m)` | `component1(): Int` などを直接呼び、ボクシングなし |
+| `var a` に対する `a += x`(`plus` と `plusAssign` の両方がある場合) | **コンパイルエラー**(候補が曖昧)。`val a` なら問題なし |
+
+**注意点**
+
+- `+=` の曖昧さのエラーは標準の `MutableList` と同じ挙動です。`plus` を残すために受け入れます。可変コレクションは `val` で宣言するか、`add` を使います。
+- `a + x` は毎回全コピーするので、ループで `a = a + x` と書くと O(n²) になります。KDoc に明記し、ループでは `+=` を使います。
+- `m[k] += 1` は探索が 2 回走ります。ボクシングはありませんが、ホットパスでは 1 回で済む `m.addTo(k, 1)` を使います。性能差は JMH で確認します。
+- `for ((k, v) in m)` のカーソルは 1 つのオブジェクトを再利用します。ループごとに 1 回の確保が発生し、エントリをループの外に持ち出すと値が変わります。
+
+---
+
+## 5. 提供するコレクション
+
+### 5.1 型行列
+
+K はキー、V は値です。合計約 120 クラスを見込みます(jar の予算は §7.6)。
+
+| コレクション | 型 | クラス数 |
+|---|---|---|
+| `List` | Int, Long, Double, Float, Char, Short, Byte, Boolean | 8 |
+| `SubList` | 同上 | 8 |
+| `Deque` | 同上 | 8 |
+| `MinHeap` / `MaxHeap` | Boolean 以外の 7 型 × 2 | 14 |
+| ペアヒープ `KVMinHeap` / `KVMaxHeap` | K: Int, Long, Double × V: Int, Long, Obj × 2 | 18 |
+| `IndexedMinHeap` / `IndexedMaxHeap` | K: Int, Long, Double × 2 | 6 |
+| `HashSet` | Boolean 以外の 7 型 | 7 |
+| `HashMap` | K: Int, Long, Char, Double, Obj × V: Int, Long, Double, Boolean, Obj(Obj-Obj を除く) | 24 |
+| `TreeSet` | Int, Long, Double, Char | 4 |
+| `TreeMultiset` | Int, Long, Double, Char | 4 |
+| `TreeMap` | K: Int, Long, Double, Char × V: Int, Long, Double, Obj | 16 |
+| 単独クラス | `BitSet`、`FastSet`、`CsrGraph`、`IntPair` など | 数個 |
+
+- `UInt` / `ULong`: v1 では対象外です。生成器の型定義は拡張可能にしておき、需要があれば追加します。
+- `Byte` / `Short` キーの Map: 配列で直接引けるため、v1 では作りません。
+
+### 5.2 共通操作
+
+すべてのコレクションに次を用意します: `size`、`isEmpty()`、`isNotEmpty()`、`clear()`、`copy()`、`toXArray()`、`equals`、`hashCode`、`toString`、`appendTo(StringBuilder, separator)`、初期容量つきコンストラクタ、`intListOf(vararg)` 形式の生成関数、配列からの構築。演算子と慣用的な名前は §4.8 に従います。
+
+標準コレクションとの変換(`toList()` など、§4.6)にはボクシングが伴うので、`@BoxingApi` を付けて静的検査の例外にします。
+
+### 5.3 List(`IntList`)
+
+| 分類 | 操作 |
+|---|---|
+| 要素 | `get`、`set`(operator)、`first`、`last`、`firstOrDefault`、`lastOrDefault`、`firstOrElse`、`lastOrElse` |
+| 追加 | `add`、`+=`、`addAll(IntArray / IntList / 部分範囲)`、`insert(i, v)`、`insertAll` |
+| 削除 | `removeAt`、`removeLast`、`removeFirst`、`removeValue`、`removeRange`、`swapRemove`、`removeIf {}`、`truncate(n)` |
+| 容量 | `ensureCapacity`、`trimToSize`、`resize(n, fill)`、`capacity` |
+| 検索 | `contains`、`indexOf`、`lastIndexOf`、`binarySearch`、`lowerBound`、`upperBound`、`indexOfFirst {}`、`indexOfLast {}` |
+| 並べ替え | `sort`、`sortDescending`、`sort(from, to)`、`sortWith(IntComparator)`、`sortBy {}`、`argsort`、`reverse`、`shuffle(Random)`、`swap`、`rotate`、`fill`、`dedupe`(隣接重複の除去)、`nextPermutation` |
+| 高階 | `forEach`、`forEachIndexed`、`map`、`mapToLong` などの型変換、`filter`、`any`、`all`、`none`、`count`、`fold`、`sumOf` |
+| 集計 | `sum`、`min`、`max`、`minOrDefault`、`maxOrDefault`、`indexOfMin`、`indexOfMax` |
+| 反復 | `operator iterator()`(`kotlin.collections.IntIterator` を返す)、`indices`、`slice`、逆順 `forEachReversed` |
+
+#### 5.3.1 `subList`(`IntSubList`)
+
+`list.subList(from, to)` は、`IntList` の範囲 `[from, to)` を指す**ビュー**を返します。`List<Int>` ではなく専用の final クラスなので、ボクシングはしません。コピーが欲しいときは `slice(from, to)` を使います。
+
+| 分類 | 操作 |
+|---|---|
+| 要素 | `[]`、`[] =`、`first`、`last`、`size`、`indices`、`in` |
+| 変更(親に反映) | `sort`、`sortDescending`、`sortWith`、`sortBy {}`、`reverse`、`shuffle`、`fill`、`swap`、`rotate`、`clear()`(親から範囲を削除) |
+| 検索・集計 | `indexOf`、`binarySearch`、`lowerBound`、`upperBound`、`sum`、`min`、`max`、`count {}`、`any {}`、`all {}` |
+| 反復 | `for (x in sub)`、`forEach`、`forEachIndexed` |
+| 変換 | `subList`(入れ子は親を直接指すように平坦化)、`toIntList()`、`toIntArray()`、`toList()`、`joinToString()`、`contentEquals(IntList / IntSubList)` |
+
+**動作の仕様**
+
+- **長さは固定です。** `add` や `removeAt` は持ちません(例外は `clear()` のみ)。`list.subList(a, b).clear()` は Java でよく使う書き方なので対応します。
+- **親の構造変更を検出します。** 親に `add` や `removeAt` などを行った後でビューを使うと例外になります。ずれた範囲を読んで黙って誤答になるのを防ぐためです。`set` など構造が変わらない変更は検出せず、ビューにも反映されます。
+- **検出には `IntList` の `modCount` を使います。** `add` のホットパスに加算が 1 回増えるので、JMH で影響を測ります。無視できないほど遅くなる場合は、`from + size <= parent.size` の確認だけに切り替えます(`add` は検出できますが、挿入による中身のずれは検出できません)。
+- **確保:** 呼び出しごとに 1 オブジェクトを確保します。ホットループの中では、`IntList` の範囲引数つき API(`sort(from, to)` など)の方が確実です。
+- **バンドル:** `subList` を使っていない提出に `IntSubList` が含まれないように、`IntList` のメンバーではなく拡張関数として定義します。
+
+**対象は `List` のみです(8 型)。** `Deque` は範囲の反復とコピーで足り、配列には標準の `copyOfRange` や範囲引数つきの `sort` があります。
+
+### 5.4 Deque(`IntDeque`)
+
+リングバッファ(容量は 2 の冪、`and` でマスク)で実装します。
+
+`addFirst`、`addLast`、`removeFirst`、`removeLast`、`first`、`last`、`*OrDefault`、`*OrElse`、`get(i)`、`set(i, v)`(先頭からの添字)、`addAll*`、`contains`、`indexOf`、`rotate`、`forEach`、`forEachReversed`、`toIntArray`(巻き戻し済み配列を返す)。スタックやキューの用途にも使います。
+
+### 5.5 ヒープ
+
+**単純ヒープ(`IntMinHeap`、`IntMaxHeap`)**
+
+`add`、`first`、`removeFirst`、`firstOrDefault`、`removeFirstOrDefault`、`replaceFirst`(pop + push を 1 回の sift で)、`addAll`、配列から O(n) で構築、`drainSortedTo`、`forEachUnordered`。
+
+**ペアヒープ(`LongIntMinHeap`)**
+
+```kotlin
+val pq = LongIntMinHeap()
+pq.add(0L, s)
+while (pq.isNotEmpty()) {
+    val d = pq.firstKey(); val v = pq.firstValue(); pq.removeFirst()
+    // ...
+}
+```
+
+Pair を返せないので `firstKey()` / `firstValue()` に分けます。内部は並列配列または 4 分ヒープとし、実測で決めます。
+
+**インデックス付きヒープ**: 添字集合 `[0, n)` に対する `set(i, key)`、`decreaseKey`、`increaseKey`、`remove(i)`、`contains(i)`、`keyOf(i)`、`firstIndex()`。
+
+**比較関数付きヒープ**: `IntComparator` を受け取る別クラスにし、Min / Max の高速経路に影響を与えません。
+
+### 5.6 HashSet / HashMap
+
+**内部設計**
+
+| 項目 | 方針 |
+|---|---|
+| 方式 | オープンアドレス法、線形探索、2 の冪容量 |
+| 削除 | Backward shift。墓標を使わず、劣化や無限ループを防ぐ |
+| 空きの判定 | キー 0(または型ごとの番兵)を別フィールドで管理。任意のキー値を格納可能 |
+| ハッシュ | 乗算 + シフトの強いミックス関数とインスタンス別ソルト |
+| ソルト | 固定の初期値 + カウンタで決定的に生成。再現性を保ちつつ、引数で上書き可能 |
+| 負荷率 | 0.5〜0.75 を実測で決定 |
+| 容量上限 | 2^30。閾値は Long で計算し、超過時は明示的な例外 |
+| 浮動小数点キー | `toBits()` で比較(NaN は同一、0.0 と -0.0 は別) |
+
+インスタンス別ソルトを入れる理由は、**線形探索の表をイテレーション順に別の表へコピーすると、ほぼ 2 乗の時間になる**既知の劣化を防ぐためです。AtCoder には開催中のハック制度がないため、乱数シードより再現性を優先します(ただし `after_contest` テストの存在を踏まえ、シードの差し替えは可能にします)。
+
+**Map の操作**
+
+| 分類 | 操作 |
+|---|---|
+| 基本 | `get`(不在時はゼロ値、§4.3)、`set`、`getOrDefault`、`getOrElse {}`、`getOrPut {}`、`contains`(`k in map`)、`containsKey`、`containsValue` |
+| 更新 | `addTo(k, delta)`(数値 V)、`merge(k, v) {}`、`update(k) {}`、`putIfAbsent`、`replace`、`compute` 相当 |
+| 削除 | `remove`、`removeOrDefault`、`removeIf { k, v -> }`、`retainIf {}` |
+| 反復 | `for ((k, v) in map)`、`forEach { k, v -> }`、`forEachKey`、`forEachValue`、`keysToArray`、`valuesToArray` |
+| カーソル | `findSlot`、`keyAt`、`valueAt`、`setValueAt`。二重探索を回避 |
+| その他 | `putAll`、`ensureCapacity`、`trim`、`copy` |
+
+**Set の操作**: `add`、`remove`、`contains`、`addAll`、`removeAll`、`retainAll`、`containsAll`、`forEach`、`toArray`、`toSortedArray`、`removeIf`。
+
+**イテレーション中の変更**: `modCount` で検出して例外にします(コストは実測で確認)。AtCoder で黙って誤答になるより、RE で気づける方が有益と判断します。
+
+### 5.7 TreeSet / TreeMap / TreeMultiset
+
+**内部設計**
+
+ノードは並列配列 + Int 添字で表現し、フリーリストで再利用します。部分木サイズを持たせ、順序統計を O(log n) で提供します。再帰は使いません。
+
+候補は次の 2 つで、Phase 4 の初めに実測して決めます。
+
+| 案 | 長所 | 短所 |
+|---|---|---|
+| A. 配列ベース AVL / 重み平衡木 | 実装が単純。削除も素直 | N が大きいとキャッシュミスが多い |
+| B. カウント付き B+ 木 | キャッシュ効率がよく、2〜3 倍速い可能性(未検証) | 実装が複雑 |
+
+判定基準: B 案が N = 2×10^5〜10^6 の混合操作で **1.5 倍以上速ければ** B を採用します。テンプレートで一度書けば全型に展開されるので、複雑さは一度しか負担しません。
+
+**Set の操作**
+
+| 分類 | 操作 |
+|---|---|
+| 基本 | `add`、`remove`、`contains`、`addAll`、`clear` |
+| 端 | `first`、`last`、`pollFirst`、`pollLast`(と `*OrDefault`、`*OrElse`) |
+| 近傍 | `floor`、`ceiling`、`lower`、`higher`(と `*OrDefault`、`*OrElse`、`has*`) |
+| 順序統計 | `kth(i)`、`rank(x)`(x 未満の個数)、`countInRange(lo, hi)`、`removeKth(i)` |
+| 反復 | `forEach`、`forEachDescending`、`forEachInRange(lo, hi, 境界の開閉)`、`iterator`、`toArray` |
+
+**Map の追加操作**: `get`(不在時はゼロ値、§4.3)、`set`、`contains`、`containsKey`、`getOrDefault`、`getOrElse`、`getOrPut`、`addTo`、`merge`、`floorKey` など、`kthKey`、`kthValue`、カーソル API(`floorNode(k)` → `keyAt` / `valueAt`、`NIL` で不在を表現)。
+
+**Multiset の追加操作**: `add(x, count)`、`count(x)`、`removeOne(x)`、`removeAll(x)`、`distinctSize`、重複込みの `kth` と `rank`。
+
+**サブマップビューは作りません。** ビューは割り当てと複雑さを増やすわりに使用頻度が低いので、範囲反復と範囲カウントで代替します。
+
+### 5.8 周辺機能
+
+| 機能 | 内容 |
+|---|---|
+| `IntPair` | `@JvmInline value class(val packed: Long)`。`first`、`second`、順序保存パック(下位側の符号ビットを反転し、辞書式順序と Long の順序を一致させる) |
+| `BitSet` | `get`、`set`、`flip`、`and`、`or`、`xor`、`shl`、`shr`、`orShiftLeft`(部分和 DP)、`cardinality`、`nextSetBit`、`prevSetBit`。`java.util.BitSet` にはシフトがない |
+| `FastSet` | 64 分木で `[0, N)` の整数集合を管理。`floor` / `ceiling` が実質定数時間 |
+| `CsrGraph` | 辺を入れてから一括構築する隣接配列。`forEachNeighbor(v) { }`、`degree`、重み付き(Long、Int)、有向 / 無向 |
+| 配列拡張 | `IntArray.lowerBound`、`upperBound`、`argsort`、`argsortBy`、`sortBy`、`sortWith`、`dedupe`、`compress`(座標圧縮)、`nextPermutation`、`prefixSum` |
+
+---
+
+## 6. ソート戦略
+
+原則は **「仮説ではなく、JDK 23 の実測で採否を決める」** です。
+
+| 対象 | 既定の実装 | 検討する代替 | 採用条件 |
+|---|---|---|---|
+| Int / Float 自然順 | `Arrays.sort` | なし | **決定**: 自作しない。Int は 5×10^6 要素で最小 37 ms |
+| Long / Double 自然順 | `Arrays.sort` | なし | **決定**: 自作しない。Long は 5×10^6 要素で最小 74 ms。8 bit 基数ソートは 167 ms で、採用条件(1.3 倍以上速い)を満たさない |
+| Byte / Short / Char | `Arrays.sort`(JDK が計数ソートを使用) | なし | 自作不要 |
+| 降順 | 昇順 + 反転 | なし | 符号反転は使わない |
+| `argsort`、`sortBy { intKey }` | `(key.toLong() shl 32) or i` を Long ソート | | 比較関数不要で安定。実機で Long の `Arrays.sort` が速いので、Int キーで最速の見込み |
+| `sortBy { longKey }` | キー配列 + 添字の同時ソート、基数ソート | | 64 bit に収まらないため別実装 |
+| `sortBy { doubleKey }` | ビット変換で全順序の Long に変換 | | `-0.0` と `NaN` の順序を `Double.compare` と一致させる |
+| `sortWith(comparator)` | `IntComparator` + 反復版の pdqsort 系 / マージソート | | inline は再帰と巨大メソッドの制約があるため `fun interface` を使用 |
+| 安定ソート | 反復版マージソート | | 作業領域を再利用 |
+
+**注意点**
+
+- 上記の決定は、コードテストでの 1 回の計測に基づきます。コードテストと本番のジャッジが同じ構成かは未確認です。AVX-512 のないマシンでは結果が変わる可能性がありますが、`Arrays.sort` は性能が落ちても正しく動くので、このまま採用します。次回の言語アップデートでは計測し直します。
+- `Arrays.parallelSort` は使いません。実測でプロセッサは 1 個です。
+- **JDK の `DualPivotQuicksort.java` は移植しません。** GPL + Classpath Exception のコードです(§10)。
+- 比較関数ソートの最悪計算量を保証します(深さ制限つきでヒープソートへフォールバック、スタックは固定長)。
+- 比較関数が全順序に反していても、配列外アクセスや無限ループを起こさない実装にします。
+
+---
+
+## 7. テスト計画
+
+### 7.1 品質ゲート
+
+次のゲートをすべて満たすことを完了条件とします。
+
+| ゲート | 基準 |
+|---|---|
+| 分岐カバレッジ | 全生成クラスで 100%。除外は個別に理由を記録 |
+| 変異テスト(PIT) | 代表型(Int、Long、Double と各 Map)で 90% 以上。生存変異はすべて確認し、等価変異として記録するか、テストを追加 |
+| 差分テスト | §7.2 を全クラス・全シードで通過 |
+| ボクシング検査 | 例外リスト以外で検出ゼロ |
+| 確保量テスト | ホットパスで 0 バイト |
+| E2E | 実ジャッジ構成で全サンプル通過 |
+| 実問題 | AtCoder 過去問 30 問以上で AC(§7.5) |
+
+**残るリスク**: JIT のバグ、ジャッジの CPU 差異、テスト自体の誤り。参照モデルが `java.util` なので、同じ仕様解釈の誤りは検出できません。API ごとの手書きテストで補います。
+
+### 7.2 テストの種類
+
+| 種類 | 内容 |
+|---|---|
+| **モデル差分テスト** | ランダムな操作列を `java.util`(`ArrayList`、`ArrayDeque`、`HashMap`、`TreeMap`、`PriorityQueue`)と同時に実行し、毎操作で結果を、定期的に全内容を比較。テスト側のボクシングは許容 |
+| **操作分布** | 追加偏重、削除偏重、小さな値域(衝突や重複が多い)、単調増加、空付近の往復 |
+| **境界値** | 全型で `MIN`、`MAX`、`0`、`-1`、`1`。浮動小数点は `NaN`、`±0.0`、`±Infinity`、`MIN_VALUE`。空、要素 1 個、容量ちょうど、拡張直前直後 |
+| **網羅テスト** | 小さいサイズでの全順列(ソート)、全操作列(n ≤ 4〜5 程度) |
+| **不変条件検査** | テスト専用の `checkInvariants()`。木の平衡と部分木サイズ、ヒープ条件、ハッシュ探索列の連続性、リングバッファの範囲、カウンタの一致 |
+| **ソート** | ランダム、昇順、降順、全同値、のこぎり波、organ pipe、クイックソートキラー列、基数ソートの境界。結果は `Arrays.sort` と一致を確認し、安定性も検証 |
+| **ハッシュ耐性** | 連番、等差、上位ビットだけ異なるキー、2^k の倍数、同じ順序での表コピーで線形時間になること |
+| **例外仕様** | 空に対する操作、範囲外の添字、不正な範囲、イテレーション中の変更 |
+| **`subList`** | `ArrayList.subList` との差分テスト(全操作、入れ子、`from == to`、全範囲)。親への反映、親の構造変更後の例外、`clear()` 後の親と親の `modCount` の整合 |
+| **演算子** | §4.8 の全記法を、対応する標準コレクションと差分テスト。`a + x` が元を変更しないこと、`a += x` がその場で変更されること、自己参照(`a += a`) |
+| **相互運用** | 標準コレクションとの往復変換で内容が一致すること(空、`MIN` / `MAX`、`NaN`、`±0.0` を含む)、Tree 系の変換で順序が保たれること、変換後の変更が元に影響しないこと |
+| **不在時の `map[k]`** | 全組み合わせでゼロ値を返すこと、読み取りでサイズが変わらないこと、値 0 のキーが `k in map` では存在扱いになること |
+| **自己参照** | `addAll(self)`、`putAll(self)`、`retainAll(self)` |
+| **オーバーフロー** | `nextCapacity` などの純粋関数を境界値で単体テスト。さらに夜間ジョブで `ByteList` を実際に 2^31 付近まで拡張 |
+| **意味論** | `equals` / `hashCode` の整合、`copy` の独立性、`clear` 後の再利用、`toString` |
+
+シードは失敗時に出力し、`-Dseed=...` で再現できるようにします。失敗した操作列は自動で短縮して(ddmin)、回帰テストとして追加します。
+
+**実行量**: PR では各クラス 10^4 操作 × 数シードで 10 分以内を目標にします。夜間は 10^6〜10^7 操作に増やします。
+
+**テストの生成**: テストもテンプレートから生成し、全型に適用します。テンプレートのバグが本体とテストの両方に入らないように、期待値は実装から導かず、必ず参照モデルか手書き値から得ます。
+
+### 7.3 ボクシング検査(最重要ゲート)
+
+ASM ですべてのクラスのバイトコードを走査し、次を検出したら失敗にします。
+
+- `java/lang/{Integer,Long,Double,Float,Short,Byte,Character,Boolean}.valueOf`
+- 上記クラスの `intValue` などのアンボクシング呼び出し
+- `kotlin/jvm/internal/Boxing`
+- 公開シグネチャ上の `Ljava/lang/Integer;` など(`Int?` を返す API の検出)
+- プリミティブ型クラス内の `kotlin/Function*` の使用、`kotlin/Pair` の使用
+
+**ライブラリ単体では不十分です。** inline 関数は利用側に展開されるので、代表的な利用コードを `kotlinc 2.2.10` でコンパイルして、その `Main.jar` のうち `MainKt` にも同じ検査をかけます。`for (x in list)` の展開もここで確認します。例外は `@BoxingApi` を付けたものだけです。
+
+加えて次の 2 つを検査します。
+
+- **確保量テスト**: `com.sun.management.ThreadMXBean#getThreadAllocatedBytes` で、ウォームアップ後のホットパスの確保が 0 バイトであることを確認します。
+- **メソッドサイズ**: 全メソッドが 8000 バイトコード未満であること、代表的な利用コードの展開後のサイズを監視します。
+
+### 7.4 テスト基盤
+
+JUnit 5 + kotlin-test を使います。操作列の実行器は自作して依存を増やしません。カバレッジは Kover、変異テストは PIT(Gradle プラグイン)、バイトコード検査は ASM です。いずれもテスト時のみの依存で、配布物には含みません。
+
+### 7.5 E2E と実問題
+
+| 段階 | 内容 |
+|---|---|
+| ジャッジ再現環境 | 公式 TOML の install スクリプトと同じ構成の Linux x64 Docker イメージを作成(Kotlin 2.2.10、JDK 23.0.2) |
+| 貼り付け方式(現在の提出形態) | バンドラの出力を `Main.kt` にして、§2.1 と同じコマンドでコンパイル・実行。**テストスイートの代表ケースもこの形で実行** |
+| jar 方式(将来の提出形態) | §2.1 のコマンドの `-cp` と `kotlin.sh` に本 jar を追加してコンパイル・実行。**同じ `Main.kt` で**貼り付け方式と出力が一致することを確認 |
+| インストールのリハーサル | ジャッジ再現環境に、提案予定のスクリプトで jar を導入できることを確認 |
+| 代表問題 | Dijkstra、カウンタ、順序統計、グリッド BFS、座標圧縮など、AtCoder 過去問 30 問以上を実際に AC し、`java.util` 版との時間とメモリを比較して記録 |
+| 実機確認 | AtCoder のコードテストで動作と速度を確認 |
+
+### 7.6 性能・サイズの基準
+
+JMH(`-prof gc`)で、`java.util`、fastutil、HPPC と比較します。ベンチマークは次の 3 段階で行います。
+
+1. **Linux x64 の CI**: 回帰検知のみ。Mac や ARM の結果は SIMD の条件が違うので、**採否の判断には使いません**。
+2. **ジャッジ再現環境**: 設計判断に使います。
+3. **AtCoder コードテスト**: 最終確認に使います。
+
+**1 回実行の時間を重視します。** AtCoder の実行は数百 ms〜数秒と短く、プロセッサが 1 個なので、JIT コンパイルと本体が同じ CPU を取り合います。実測では、200,000 要素のソートの 1 回目は最小値の約 10 倍かかりました(51 ms と 5 ms)。定常状態の JMH だけで判断せず、1 回実行の総時間(`-bm ss` 相当と実プロセス起動)を `-XX:+UseSerialGC -XX:ActiveProcessorCount=1 -XX:MaxHeapSize=1000341504` で計測します。バイトコードが小さいほど JIT の負担も減るので、inline の展開量もこの観点で評価します。
+
+| 指標 | 目標(実測後に確定) |
+|---|---|
+| ホットパス | `java.util` に必ず勝つ。fastutil と同等以上 |
+| 起動オーバーヘッド | 未使用クラスのロードなし。Hello World との差がノイズ以内 |
+| **バンドル後のソースサイズ** | 典型的な提出(数クラス利用)で上限の 1/4 以下。最大級の組み合わせでも上限内 |
+| **バンドルによるコンパイル時間の増加** | Phase 0 で確認した上限に対して十分な余裕を確保(具体値は実測後に確定) |
+| jar サイズ | 1.5 MB 以下(HPPC 程度)。インストール提案の材料として毎リリース記録 |
+| jar 追加によるコンパイル時間の増加 | +1 秒以内。全 Kotlin 提出に影響するので、ジャッジ導入時の重要な指標 |
+| メモリ | 同等の `java.util` 比で 1/3 以下 |
+
+**性能の計測は貼り付け形式でも行います。** 提出時はコンパイルオプションを指定できないので、`-Xno-param-assertions` などのライブラリ向け最適化は当てにできません。判断には、バンドル後のコードを §2.1 のコマンドでコンパイルしたものの結果を使います。
+
+**配列の拡張はヒープ上限よりかなり手前で失敗します**(Serial GC の設定を再現した実験、`docs/judge-env.md`)。
+
+| 拡張率 | `IntList` が拡張で到達できる要素数(目安) |
+|---|---|
+| 2 倍 | 約 7100 万 |
+| 1.5 倍 | 約 8700 万 |
+| 拡張なし(事前確保) | 約 1.6 億(1 個の配列の上限 約 637 MiB) |
+
+- 通常の制約(N ≤ 10^7 程度)ではどの拡張率でも届くので、**拡張率は到達要素数ではなく、1 回実行の時間と平均メモリで決めます**(1.5 倍と 2 倍を比較)。
+- 要素数が分かっているときに事前確保できるように、`IntList(capacity)` と `ensureCapacity` を用意します。
+- 使えるヒープは約 922 MiB で、問題のメモリ制限が大きくても増えません(物理メモリが同じ場合)。
+- ハッシュ表は 2 の冪容量で、新旧の配列が同時に必要です。到達できる要素数を Phase 3 で同じ設定で測り、KDoc に書きます。
+
+---
+
+## 8. 配布とバンドラ
+
+### 8.1 配布の 3 形態
+
+| 形態 | 用途 | 状態 |
+|---|---|---|
+| **バンドラ**(`Main.kt` + ライブラリ → 1 ファイル) | **ジャッジ導入までの提出手段** | 必須 |
+| クラス単位の公開ソース(タグ付き) | 手動コピー、ルール上の根拠 | 必須 |
+| **jar** | 手元の開発(IDE 補完、テスト)。**ジャッジ導入後の提出手段** | 必須。リリースごとに公開 |
+
+### 8.2 バンドラの要件
+
+- `Main.kt` で使っているクラスを検出し、依存を含めて必要なものだけを結合します(クラス単位)。
+- 1 ファイルには 1 パッケージしか書けないため、`package` と本ライブラリの `import` を除去します。
+- **参照 URL を自動で付与します**(タグまたはコミットに固定した永続リンク)。§2.3 の条件を満たすためです。
+- **名前の短縮や難読化はしません。** ルールで禁止されています。空行とコメントの除去だけを任意で行います。
+- 出力サイズが上限を超えそうな場合は警告します。ソース長の上限は通常 512 KiB と認識していますが、ルールページでは確認できなかったので Phase 0 で確認します。
+- 手元では `import` で開発し、バンドラの出力を提出します。同じコードが両方で同じように動くことを E2E で保証します。
+- 生成するソースは **Kotlin 2.2 の言語機能の範囲で書きます。** ジャッジの `kotlinc 2.2.10` でコンパイルされるためです。
+- 実行時に生成 AI を使いません。ローカルで完結するので、開催中も使用できます。
+
+---
+
+## 9. 生成 AI ルールへの対応
+
+本ライブラリの実装に生成 AI(Claude Code)を使う場合、次を満たす必要があります。
+
+| # | 対応 | 担保方法 |
+|---|---|---|
+| 1 | リポジトリを**公開**する | Phase 1 から公開リポジトリで開発 |
+| 2 | **生成後のコードも公開**する | テンプレートだけでは、提出コードと同じ内容が事前に公開されていたことを確認しづらいため、リリースごとに生成済みソースをタグ付きで公開 |
+| 3 | コンテスト前にリリースする | 利用するのはリリース済みのタグのみ。未公開の変更を含むバンドルは生成時にエラー |
+| 4 | 提出時に参照 URL を添付 | バンドラが自動で付与 |
+| 5 | README に利用条件を明記 | 「他の利用者も URL の添付が必要」と明記。他人が知らずにコピーしても違反になるため、ソースのヘッダにも記載 |
+| 6 | 開催中は生成 AI でライブラリを修正しない | 運用ルールとして README に明記 |
+
+**ルールの改定を継続的に確認します。** 最新版は 2026-10-14 版で、頻繁に更新されています。解釈に不安があれば、AtCoder に確認します。
+
+ジャッジに導入された後は `import` のみでコードをコピーしないので、URL 添付の扱いが変わる可能性があります。導入時に確認します。なお、安全のため URL は付け続ける運用とします。
+
+---
+
+## 10. ライセンス
+
+### 10.1 決定: CC0-1.0
+
+CC0-1.0 を採用します。貼り付け提出に表記の義務がなく、ac-library-java と同じライセンスなのでジャッジ導入の前例もあります。
+
+なお、CC0 でライセンス表記の義務はなくなりますが、**生成 AI ルールの参照 URL の添付は別の義務**なので、引き続き必要です(§9)。
+
+### 10.2 必要な表記
+
+| 場所 | 内容 |
+|---|---|
+| `LICENSE` | 全文 |
+| 全ソース、テンプレート | `SPDX-License-Identifier` ヘッダ |
+| **生成コード** | 生成器が同じヘッダを出力 |
+| jar | `META-INF/LICENSE`、`META-INF/THIRD_PARTY_NOTICES` |
+| バンドラ出力 | SPDX 行と参照 URL |
+| `README` | ライセンス名 |
+| インストール依頼 TOML | `license` フィールド(既存エントリの形式に合わせる) |
+| CI | `reuse lint` でヘッダ漏れを検出 |
+
+### 10.3 コードの出所の管理
+
+| 参考元 | ライセンス | 扱い |
+|---|---|---|
+| JDK(`DualPivotQuicksort` など) | GPLv2 + CE | **コードを移植しない** |
+| fastutil、Eclipse Collections | Apache-2.0 など | 公開された手法のみ参考にし、コードはコピーしない |
+| pdqsort | zlib | 論文と仕様から実装。コードを移植する場合は NOTICE に記載 |
+| 実行時依存 | なし | Kotlin stdlib は `-include-runtime` で供給されるので同梱しない |
+
+テスト用の依存(JUnit、ASM、PIT など)は配布物に含みません。依存ライセンスの一覧は生成して保管します。
+
+---
+
+## 11. 実装フェーズ
+
+順序は技術的リスクの高い順です。各フェーズの完了条件を満たしてから次に進みます。
+
+### Phase 0: 環境固定と実測
+
+**ビルド設定**
+
+| 項目 | 設定 | 備考 |
+|---|---|---|
+| Kotlin | Gradle プラグイン 2.2.10 | ジャッジとコンパイラごと揃える |
+| JDK | `jvmToolchain(23)` | クラスファイルは major 67(Java 23) |
+| Gradle | 9.8.0 | ビルドとテストの通過を確認。Gradle 10 非対応の機能についての警告あり |
+| group | `ac_primitive_collections` | §13 |
+
+提出コードはジャッジの `kotlinc 2.2.10` でコンパイルされるので、**手元のテストも同じコンパイラで行います。** `JudgeToolchainTest` で Kotlin と JDK のバージョンを検証します。手元の JDK はパッチ版まで一致するとは限らないので(23.0.2 との完全一致はジャッジ再現環境で担保)、テストでは 23 系であることのみ確認します。
+
+**Phase 0 の進捗**
+
+| 項目 | 状態 |
+|---|---|
+| ビルド設定、`git init`、`LICENSE`(CC0-1.0) | 完了 |
+| バイトコード実験の 2.2.10 での再確認(§4.6、§4.8) | 完了 |
+| 計測コード `e2e/judge-probe/Main.kt` | 完了。`kotlinc 2.2.10` でコンパイルと実行を確認 |
+| `e2e/judge/Dockerfile` | 作成済み、**未ビルド**。ベースイメージは推定 |
+| AtCoder コードテストでの実測、`docs/judge-env.md` | 完了 |
+| ソース長とコンパイル時間の上限の確認 | **未実施** |
+
+開発機は arm64 なので、Docker は x64 エミュレーションになります。互換性の確認には使えますが、**性能の判断には使えません**。性能の判断は AtCoder コードテストの結果を基準にします。
+
+この方針が必要な実例があります。5×10^6 要素の Long のソートは、ローカル(arm64)では `Arrays.sort` 313 ms に対して基数ソート 66 ms でしたが、コードテストでは `Arrays.sort` 74 ms に対して基数ソート 167 ms と**逆転しました**。
+
+Kotlin と JDK のバージョンは 1 か所の設定にまとめ、次回の言語アップデート時に差し替えられるようにします。将来のバージョンへの事前対応はしません。
+
+**完了条件**: ジャッジ再現の Docker イメージと、実測値の記録(`docs/judge-env.md`)。
+
+### Phase 1: 縦切り(`IntList` のみで全パイプライン)
+
+生成器、テンプレート、差分テスト、ボクシング検査、確保量テスト、JMH、バンドラ、E2E、ライセンス検査、CI を、**1 クラスで全部通します**。
+
+**生成器の設計**
+
+Gradle の `build-logic` に Kotlin で実装し、外部のテンプレートエンジンや KSP に依存しません。
+
+```kotlin
+// templates/KTypeList.kt — そのままコンパイル可能な正しい Kotlin
+typealias KType = Int
+typealias KTypeArray = IntArray
+
+class KTypeList { /* KType を使って実装 */ }
+```
+
+- **テンプレート自体が正しい Kotlin** です。IDE の補完やリファクタリングが効きます。Int 版としてそのままテストでき、トークン置換で他の型を生成します。
+- 条件分岐は `//#if KEY_IS_FLOATING ... //#endif` のマーカーで書きます。
+- 型の差(比較、等値、ハッシュ、ゼロ値、番兵)は型定義テーブルにまとめます。
+- 一部の型だけの特殊実装は手書きファイルで上書きできます。
+- 出力は決定的にして、CI で再生成の一致を確認します。
+- 生成物は通常 `build/` に出力し、リリース時にタグ付きで公開します(§9)。
+
+**完了条件**: `IntList` がすべてのゲートを通過し、バンドラ出力で AtCoder に実際に提出して AC できること。
+
+### Phase 2: 線形構造とソート
+
+全型の `List`、`Deque`、単純ヒープ、ペアヒープ、インデックス付きヒープ、配列拡張。ソートの実測(§6)と採否の決定。
+
+**完了条件**: Dijkstra と argsort の代表問題が AC。`java.util` 比の性能を記録。
+
+### Phase 3: ハッシュ
+
+`HashSet`、`HashMap`。負荷率、ハッシュ関数、キー管理の実測と決定。
+
+**完了条件**: 差分テストと劣化ケースのテストの通過。HPPC / fastutil との比較。
+
+### Phase 4: ツリー
+
+AVL / WBT と B+ 木の比較実験(Int キーのみで実装)、方式の決定、`TreeSet`、`TreeMap`、`TreeMultiset`。
+
+**完了条件**: `java.util.TreeMap` に対する差分テスト、順序統計の参照モデル(ソート済み配列)との一致、代表問題の AC。
+
+### Phase 5: 周辺機能
+
+`IntPair`、`BitSet`、`FastSet`、`CsrGraph`、座標圧縮。
+
+### Phase 6: 1.0 リリース
+
+- API の見直し。互換性の保証はせず、必要なら変更します(凍結はジャッジ導入時のみ。導入後は長期間修正できないため)
+- インストールスクリプト案(`install/`)を公開
+- 自分が使うための最小限の文書: API の注意点を書いた KDoc と短い README(ライセンス、AI ルールの URL 添付条件、サポートしない旨)
+- GitHub Release に jar、SHA-256、生成済みソースを公開。ジャッジへの導入はこの jar を使います(`ac-library-java` と同じ方式)
+- タグは参照 URL の根拠になるので、付け替えや削除をしません
+
+### Phase 7: ジャッジへのインストール提案(次回の言語アップデート時)
+
+本プロジェクトの最終目標です。準備は Phase 1 から続けます(§1.4)。
+
+**常時行うこと**
+
+- インストールスクリプト案のリハーサルを CI で実行し、jar のサイズ、コンパイル時間、起動時間の影響を毎リリース記録
+- 実際に使った問題と効果(`java.util` 版との時間・メモリ比較)を蓄積し、提案の根拠にする
+- 言語アップデートの告知を確認(時期は不明なので、告知があればすぐ動けるようにしておく)
+
+**アップデートの告知後に行うこと**
+
+1. Kotlin / JDK の設定を新環境に変更し、ジャッジ再現環境を新しい TOML から作り直して全ゲートを実行
+2. API を凍結して、新環境向けの jar をリリース
+3. その時点の既存エントリの形式に合わせて TOML を作成し、提案(jar の取得、SHA-256 の検証、`-cp` への追加)
+4. コンパイル時間と起動時間への影響のデータを添える(他の利用者が不利にならないことを示す)
+
+導入は保証されないので、見送られた場合はバンドラでの運用を続け、次の機会に再提案します。
+
+---
+
+## 12. リポジトリ構成(案)
+
+```
+.
+├── LICENSE, README.md, THIRD_PARTY_NOTICES
+├── build-logic/          # 生成器(Gradle included build)
+├── templates/            # 本体テンプレート(正しい Kotlin)
+├── src/main/kotlin/      # 手書きコード(BitSet、IntPair など)
+├── src/test/kotlin/      # 手書きテスト、テスト基盤
+├── test-templates/       # 全型展開するテスト
+├── src/jmh/              # ベンチマーク
+├── bytecode-check/       # ASM によるボクシング検査
+├── bundler/              # 貼り付け用バンドラ CLI
+├── e2e/                  # Docker、利用コード、代表問題
+├── install/              # ジャッジへのインストールスクリプト案
+├── docs/                 # 本計画書、judge-env.md、設計判断の記録
+└── .github/workflows/    # PR と夜間の CI
+```
+
+現在は git リポジトリではないので、Phase 0 で `git init` します。GitHub の公開リポジトリは `ac-primitive-collections-kt` の名前で作成します。
+
+### CI
+
+| タイミング | 内容 |
+|---|---|
+| PR | 生成の決定性、ビルド、差分テスト(短)、カバレッジ、ボクシング検査、確保量、禁止パターン、`reuse lint`、E2E |
+| 夜間 | 差分テスト(長)、PIT、JMH の回帰検知、巨大容量テスト |
+| リリース | 全ゲート、jar とソースの公開、バンドラ出力の検証 |
+
+---
+
+## 13. 判断事項
+
+### 決定済み
+
+| 事項 | 決定 |
+|---|---|
+| ライセンス | CC0-1.0 |
+| リポジトリ | GitHub で公開(AI ルールの条件を満たすため。Maven などへの公開はしない) |
+| 想定利用者 | 作者本人のみ。他者の利用は妨げないがサポートしない |
+| 標準コレクションとの相互運用 | 変換(コピー)のみ提供し、`List<Int>` などは実装しない(§4.6) |
+| 可変と不変 | 全コレクションを可変のみとする(§4.7) |
+| `subList` | ボクシングなしのビューとして提供する(§5.3.1) |
+| Kotlin の演算子と慣用表現 | `[]`、`in`、`+` などを一通りサポートする(§4.8) |
+| リポジトリ名 | `ac-primitive-collections-kt` |
+| パッケージ名 | `ac_primitive_collections`(`import ac_primitive_collections.*`)。ジャッジ導入済みの `ac_library` と同じ形式 |
+| `map[k]` の不在時 | ゼロ値を返す。存在確認は `k in map` などで可能(§4.3) |
+| 対象環境 | 当面は現行ジャッジ(Kotlin 2.2.10、JDK 23.0.2)。提出は貼り付け方式 |
+| ジャッジへの導入 | **次回の言語アップデートで提案する(最終目標、§1.4)**。時期は未定 |
+
+### その他の判断
+
+| 事項 | 採用する案 | 不採用の案 |
+|---|---|---|
+| ハッシュのシード | 決定的 + インスタンス別ソルト | プロセスごとに乱数(再現性を失う) |
+| `UInt` / `ULong` | v1 では対象外 | 最初から含める |
+
+---
+
+## 14. リスクと対策
+
+| リスク | 影響 | 対策 |
+|---|---|---|
+| ジャッジへの導入が見送られる、または数年先になる | 最終目標が遅れ、貼り付けの不便さが続く | バンドラで使い続けられるようにしつつ、実績データを蓄積して次の機会に再提案 |
+| 導入の提案が受け入れられにくい(全提出のコンパイル時間やクラスパスに影響) | 導入されない | jar を小さく保ち、依存をなくし、影響の計測値を添える |
+| バンドルでソース長やコンパイル時間が上限に近づく | 提出できない、または CE | クラス単位の削減、サイズ予算を CI で監視、Phase 1 の時点で実測 |
+| 生成 AI ルールの改定 | 使用が違反になる可能性 | ルールの定期確認、URL 添付と事前公開を維持 |
+| 次回アップデートで Kotlin / JDK が変わる | 互換性の破損、最適化の前提の変化 | バージョン設定を 1 か所に集約し、新しい TOML から環境を再現して全ゲートと性能の判断をやり直す |
+| `map[k]` がゼロ値を返すため、キーの有無の取り違えに気づきにくい | 誤答 | KDoc と README で明記、`k in map` と `findSlot` を提供 |
+| JMH と実問題で傾向が異なる | 誤った最適化 | 実プロセスの 1 回実行と AtCoder 実機で最終判断 |
+| 本番のジャッジの CPU がコードテストと異なる(AVX-512 なしなど) | `Arrays.sort` が想定より遅くなる | 正しさには影響しない。次回の言語アップデートで計測し直す |
+| テンプレートの一括バグ | 全型に波及 | 全型での差分テスト、参照モデルを実装から独立 |
+| 型行列の肥大化 | コンパイルや開発の遅延 | サイズ予算を CI で監視、型行列(§5.1)を見直す |
+| B+ 木の実装の複雑さ | Phase 4 の遅延 | AVL を先に完成させ、差し替え可能にする |
+
+---
+
+## 15. 未確認事項
+
+Phase 0 までに確認します。
+
+| 項目 | 状況 |
+|---|---|
+| ソース長の上限(512 KiB) | 一般的な認識。ルールページの確認できた範囲には記載なし |
+| コンパイル時間の上限 | 未確認。実測が必要 |
+| コードテストと本番のジャッジが同じ構成か | 未確認。コードテストの実測は `docs/judge-env.md` |
+| `Arrays.sort` の SIMD 実装が実際に使われているか | 直接は未確認。実機の速度は SIMD の利用と整合する |
+| B+ 木の速度差など、§5〜§7 の性能に関する見込みと目標値 | 仮説。実測後に確定 |
+
+---
+
+## 16. 出典
+
+- [AtCoder 言語一覧 2025/10 版](https://img.atcoder.jp/file/language-update/2025-10/language-list.html)
+- [Kotlin install TOML](https://img.atcoder.jp/file/language-update/2025-10/062-2-0-21_openjdk-23.toml)
+- [Language Test 202505](https://atcoder.jp/contests/language-test-202505)、[ルール](https://atcoder.jp/contests/language-test-202505/rules)
+- [AtCoder 生成 AI 対策ルール 20261014 版](https://info.atcoder.jp/entry/llm-rules-ja)
+- [ABC 428 ルール](https://atcoder.jp/contests/abc428/rules)、[お問い合わせ](https://atcoder.jp/contact?lang=ja)、[新ジャッジ運用開始のお知らせ](https://atcoder.jp/posts/1579)
+- [Kotlin compiler options](https://kotlinlang.org/docs/compiler-reference.html)、[ライブラリ作者向け後方互換性ガイド](https://kotlinlang.org/docs/api-guidelines-backward-compatibility.html)
+- [JDK-8319577: AVX2 intrinsics for Arrays.sort(統合)](https://mail.openjdk.org/pipermail/build-dev/2023-December/042482.html)、[JDK-8309130: AVX-512](https://mail.openjdk.org/pipermail/build-dev/2023-September/040816.html)
+- [Dual-Pivot Quicksort 最終版の告知](https://mail.openjdk.org/pipermail/core-libs-dev/2019-June/060915.html)、[JDK 15 のソース](https://code.yawk.at/java/15/java.base/java/util/DualPivotQuicksort.java)
+- jar サイズ: Maven Central の HTTP ヘッダで確認(fastutil 8.5.15、hppc 0.10.0、eclipse-collections 11.1.0)
