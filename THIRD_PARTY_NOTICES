@@ -1,0 +1,5 @@
+ac-primitive-collections-kt has no runtime dependencies. Kotlin's standard library is
+supplied by the compiler's -include-runtime option, so it is not bundled in this jar.
+
+Test and benchmark dependencies (JUnit, ASM, PIT, JMH, fastutil, HPPC, and others) are not
+distributed with this jar. No third-party source code is copied into this project.

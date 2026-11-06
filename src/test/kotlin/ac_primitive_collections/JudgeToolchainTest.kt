@@ -7,11 +7,11 @@ import kotlin.test.assertEquals
 class JudgeToolchainTest {
     @Test
     fun kotlinStdlibMatchesJudge() {
-        assertEquals("2.2.10", KotlinVersion.CURRENT.toString())
+        assertEquals(System.getProperty("judge.kotlin"), KotlinVersion.CURRENT.toString())
     }
 
     @Test
     fun jdkFeatureVersionMatchesJudge() {
-        assertEquals(23, Runtime.version().feature())
+        assertEquals(System.getProperty("judge.jdk").toInt(), Runtime.version().feature())
     }
 }

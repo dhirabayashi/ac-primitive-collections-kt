@@ -1,0 +1,43 @@
+#!/bin/sh
+# SPDX-License-Identifier: CC0-1.0
+# Bundles Main.kt with the library for submission. See docs/PLAN.md, section 8.
+#
+#   bundle -p            Bundle ./Main.kt for practice and copy the result to the clipboard.
+#   bundle               The same for a contest. Fails unless the library is at a pushed tag.
+#   bundle -o Out.kt X.kt   Choose the input and write to a file.
+#
+# To run it from any directory: ln -s "$PWD/bundle" ~/.local/bin/bundle
+set -eu
+
+# Follow symbolic links, so the command finds the repository from anywhere on PATH.
+self=$0
+while [ -L "$self" ]; do
+  target=$(readlink "$self")
+  case $target in
+    /*) self=$target ;;
+    *) self=$(dirname -- "$self")/$target ;;
+  esac
+done
+root=$(CDPATH= cd -- "$(dirname -- "$self")" && pwd)
+bundler=$root/bundler/build/install/bundler/bin/bundler
+
+# Build on first use and after the bundler changes. This is the only slow path.
+if [ ! -x "$bundler" ] || [ -n "$(find "$root/bundler/src/main" -newer "$bundler" -print -quit)" ]; then
+  echo "Building the bundler..." >&2
+  "$root/gradlew" -p "$root" -q :bundler:installDist >&2
+  touch "$bundler"
+fi
+
+# Explicit output or a pipe: behave like a plain filter.
+for arg in "$@"; do
+  case $arg in -o | --output) exec "$bundler" --root "$root" "$@" ;; esac
+done
+if [ ! -t 1 ] || ! command -v pbcopy >/dev/null 2>&1; then
+  exec "$bundler" --root "$root" "$@"
+fi
+
+output=$(mktemp)
+trap 'rm -f "$output"' EXIT
+"$bundler" --root "$root" -o "$output" "$@"
+pbcopy <"$output"
+echo "Copied to the clipboard. Paste it into AtCoder." >&2

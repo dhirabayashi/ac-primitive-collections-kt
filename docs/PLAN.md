@@ -1,7 +1,7 @@
 # ac-primitive-collections-kt 計画書
 
 - 作成日: 2026-11-05
-- 状態: Phase 0(環境固定と実測)
+- 状態: Phase 1(`IntList` の縦切り)。進捗は §11
 - 対象: AtCoder の Kotlin 言語環境で使う、プリミティブ型特化コレクションライブラリ
 
 ---
@@ -365,7 +365,7 @@ K はキー、V は値です。ソース上で約 130 クラスを見込みま�
 | 容量 | `ensureCapacity`、`trimToSize`、`resize(n, fill)`、`capacity` |
 | 検索 | `contains`、`indexOf`、`lastIndexOf`、`binarySearch`、`lowerBound`、`upperBound`、`indexOfFirst {}`、`indexOfLast {}` |
 | 並べ替え | `sort`、`sortDescending`、`sort(from, to)`、`sortWith(IntComparator)`、`sortBy {}`、`argsort`、`reverse`、`shuffle(Random)`、`swap`、`rotate`、`fill`、`dedupe`(隣接重複の除去)、`nextPermutation` |
-| 高階 | `forEach`、`forEachIndexed`、`map`、`mapToLong` などの型変換、`filter`、`any`、`all`、`none`、`count`、`fold`、`sumOf` |
+| 高階 | `forEach`、`forEachIndexed`、`map`、`mapToLong` などの型変換、`filter`、`any`、`all`、`none`、`count`、`fold`(§5.3.2)、`sumOf`(§5.3.2) |
 | 集計 | `sum`、`min`、`max`、`minOrDefault`、`maxOrDefault`、`indexOfMin`、`indexOfMax` |
 | 反復 | `operator iterator()`(`kotlin.collections.IntIterator` を返す)、`indices`、`slice`、逆順 `forEachReversed` |
 
@@ -385,11 +385,16 @@ K はキー、V は値です。ソース上で約 130 クラスを見込みま�
 
 - **長さは固定です。** `add` や `removeAt` は持ちません(例外は `clear()` のみ)。`list.subList(a, b).clear()` は Java でよく使う書き方なので対応します。
 - **親の構造変更を検出します。** 親に `add` や `removeAt` などを行った後でビューを使うと例外になります。ずれた範囲を読んで黙って誤答になるのを防ぐためです。`set` など構造が変わらない変更は検出せず、ビューにも反映されます。
-- **検出には `IntList` の `modCount` を使います。** `add` のホットパスに加算が 1 回増えるので、JMH で影響を測ります。無視できないほど遅くなる場合は、`from + size <= parent.size` の確認だけに切り替えます(`add` は検出できますが、挿入による中身のずれは検出できません)。
+- **検出には `IntList` の `modCount` を使います。** JMH(arm64)では、`modCount` なしとの差は n = 1000 で約 10% でした(`ops/ms` で 757 と 837。`ArrayList` は 429)。`modCount++` を `add` の最後に置くことが重要で、先頭に置くと約 2 倍遅くなりました。これを受けて検出方式は変更しません。
 - **確保:** 呼び出しごとに 1 オブジェクトを確保します。ホットループの中では、`IntList` の範囲引数つき API(`sort(from, to)` など)の方が確実です。
 - **バンドル:** `subList` を使っていない提出に `IntSubList` が含まれないように、`IntList` のメンバーではなく拡張関数として定義します。
 
 **対象は `List` のみです(8 型)。** `Deque` は範囲の反復とコピーで足り、配列には標準の `copyOfRange` や範囲引数つきの `sort` があります。
+
+#### 5.3.2 `fold` と `sumOf`(Phase 1 の実装で確定)
+
+- **`fold` は標準と同じ `fold<R>` にします。** `Int`、`Long`、`Double` の別々のオーバーロードにすると、`fold(0) { ... }` が曖昧でコンパイルエラーになります。ジェネリックでも、inline 展開後はコンパイラの最適化でボクシングが消えます。ただし**直接のループで書いたときだけ**で、`forEach` の上に書くとボクシングが残ります(Kotlin 2.2.10 で確認。`MainKt` の厳格検査で回帰を検出)。
+- **`sumOf` は `Long` を返すセレクタのみです。** `Int` と `Long` の両方を受けるには実験的機能(`@OverloadResolutionByLambdaReturnType`)が必要で、§1.4 に反します。`Int` のセレクタは `sumOf { it.toLong() }` と書きます。
 
 ### 5.4 Deque(`IntDeque`)
 
@@ -716,7 +721,7 @@ Kotlin 2.2.10 の実験で、次の差を確認しました。いずれもコン
 | `import java.util.*` と併用して、同名のクラスを使う | エラー | 成功 | 公開名の衝突検査(§5.8.2) |
 | 利用者が `IntArray.lowerBound` を定義する | 成功(利用者側が優先) | エラー | バンドラが衝突を検出して、分かりやすく報告 |
 | 利用者が `class IntPair` を定義する | 成功 | エラー | 同上 |
-| ライブラリの `internal` を呼ぶ | エラー | 成功 | バンドラが `import` 版でもコンパイルして検出 |
+| ライブラリの `internal` を呼ぶ | エラー | 成功 | バンドラがトップレベルの名前を検出。**メンバー(`list.elements` など)は検出できない**(コンパイルすると提出が遅くなるため)。ジャッジ導入後に初めて気づく可能性があるが、使わないことで避ける |
 
 結合処理にも、次の 2 つの制約があります。
 
@@ -804,10 +809,11 @@ CC0-1.0 を採用します。貼り付け提出に表記の義務がなく、ac-
 | ビルド設定、`git init`、`LICENSE`(CC0-1.0) | 完了 |
 | バイトコード実験の 2.2.10 での再確認(§4.6、§4.8) | 完了 |
 | 計測コード `e2e/judge-probe/Main.kt` | 完了。`kotlinc 2.2.10` でコンパイルと実行を確認 |
-| `e2e/judge/Dockerfile` | 作成済み、**未ビルド**。ベースイメージは推定 |
+| `e2e/judge/Dockerfile` | 完了。ビルドと、ジャッジのコマンドでのコンパイルと実行を確認。ベースイメージは推定 |
 | AtCoder コードテストでの実測、`docs/judge-env.md` | 完了 |
-| ソース長とコンパイル時間の上限の確認 | **未実施**(実際のバンドル出力で確認するので Phase 1 に移動) |
-| Kotlin と JDK のバージョンの 1 か所への集約 | **未実施**(`build.gradle.kts`、テスト、Dockerfile に分散。Phase 1 で対応) |
+| ソース長とコンパイル時間の上限の確認 | Phase 1 に移動 |
+| Kotlin と JDK のバージョンの 1 か所への集約 | 完了(`gradle.properties`) |
+| Gradle の実行 JDK の固定 | 完了(`gradle/gradle-daemon-jvm.properties`)。手元の `JAVA_HOME` が JDK 25 でも動く |
 
 開発機は arm64 なので、Docker は x64 エミュレーションになります。互換性の確認には使えますが、**性能の判断には使えません**。性能の判断は AtCoder コードテストの結果を基準にします(§7.6)。
 
@@ -815,7 +821,7 @@ CC0-1.0 を採用します。貼り付け提出に表記の義務がなく、ac-
 
 Kotlin と JDK のバージョンは 1 か所の設定にまとめ、次回の言語アップデート時に差し替えられるようにします。将来のバージョンへの事前対応はしません。
 
-**完了条件**: ジャッジ再現の Docker イメージのビルドと動作確認、実測値の記録(`docs/judge-env.md`)。
+**完了条件**: ジャッジ再現の Docker イメージのビルドと動作確認、実測値の記録(`docs/judge-env.md`)。**達成済み。**
 
 ### Phase 1: 縦切り(`IntList` のみで全パイプライン)
 
@@ -847,6 +853,32 @@ class KTypeList { /* KType を使って実装 */ }
 - 生成物は `generated/` にコミットし、ビルドもそこから行います(§9)。
 
 **完了条件**: `IntList` がすべてのゲートを通過し、バンドラ出力で AtCoder に実際に提出して AC できること。
+
+**Phase 1 の進捗**
+
+| 項目 | 状態 |
+|---|---|
+| 生成器、テンプレート、`generated/`、一致検査 | 完了(Int のみ生成。型定義は 8 型分あるが、他の型の展開は Phase 2 で初めてコンパイルされる) |
+| `IntList`、`IntSubList`、変換、比較関数ソート、argsort | 完了 |
+| 差分テスト、ddmin、網羅テスト、手書きテスト、例外仕様 | 完了 |
+| ボクシング検査(ライブラリと `MainKt`)、メソッドサイズ、確保量 | 完了。検査器自体もテスト済み |
+| 分岐カバレッジ | 100% |
+| 変異テスト | 96%。生存変異の確認は `docs/mutation-review.md` |
+| 禁止パターン、`private` の重複、名前の衝突、`reuse lint` | 完了 |
+| バンドラ、公開確認、参照 URL の付与 | 完了 |
+| E2E(貼り付けと jar、Docker)、インストールのリハーサル | 完了 |
+| JMH | 完了(arm64 の値のみ。§7.6 のとおり判断には使わない) |
+| CI の定義 | 作成済み、**未実行**(未 push のため) |
+| タグの作成と push | 完了(`v0.1.0`) |
+| AtCoder への実提出と AC | 完了。ABC 231 C を貼り付け形式で提出して AC、509 ms(2026-11-06、未公開状態のコードで、終了済みコンテストへの提出) |
+| コードテストでの比較、拡張率、ソース長とコンパイル時間の上限 | **未実施**(本人の操作が必要)。プローブは `e2e/experiments/` |
+
+**Phase 2 に残したもの**
+
+- `mapToLong` などの型変換(`LongList` が必要)、`sortBy { longKey }`、`sortBy { doubleKey }`
+- `ByteList` を 2^31 付近まで拡張する夜間テスト(§7.2)
+- `argsort`、`sortBy` の実装は Int のキーを前提にしており、Long と Double の展開には別実装が必要
+- Boolean の展開(`Arrays.sort` と `binarySearch` がない)
 
 ### Phase 2: 線形構造とソート
 
@@ -982,8 +1014,11 @@ AVL / WBT と B+ 木の比較実験(Int キーのみで実装)、方式の決定
 
 | 項目 | 状況 | 確認時期 |
 |---|---|---|
-| コンパイル時間の上限 | 未確認で、最大の未知数。増え方の参考値は `docs/judge-env.md` | Phase 1 |
-| ソース長の上限 | 未確認。512 KiB という認識はあるが、確認できたルールには記載なし | Phase 1 |
+| コンパイル時間の上限 | 未確認で、最大の未知数。増え方の参考値は `docs/judge-env.md` | Phase 1(`e2e/experiments/size-probe.py` のファイルをコードテストで確認) |
+| ソース長の上限 | 未確認。512 KiB という認識はあるが、確認できたルールには記載なし | Phase 1(同上) |
+| `nextCapacity` の拡張率 | 暫定で 1.5 倍 | Phase 1(`e2e/experiments/GrowthRate.kt` をコードテストで確認) |
+| `java.util` との 1 回実行の比較(S5) | arm64 の JMH のみ | Phase 1(`e2e/experiments/compare-arraylist/Main.kt` をコードテストで確認) |
+| `add` の n = 10^6 での速度 | `modCount` の有無と関係なく、同じ構造の比較クラスより約 1.5 倍遅い(0.40 と 0.55〜0.68 ops/ms)。原因は未解明。`ArrayList`(0.25)には勝つ | Phase 2 |
 | コードテストと本番のジャッジが同じ構成か | 未確認。コードテストの実測は `docs/judge-env.md` | 確認手段なし |
 | `Arrays.sort` の SIMD 実装が実際に使われているか | 直接は未確認。実機の速度は SIMD の利用と整合する | 確認手段なし |
 | §5〜§7 の性能に関する見込みと目標値 | 仮説。実測後に確定 | 各 Phase。B+ 木の速度差は Phase 4 |

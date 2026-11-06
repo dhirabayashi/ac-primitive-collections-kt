@@ -1,0 +1,8 @@
+version = 1
+
+# CC0 waives copyright, so no file names a holder. Files with their own SPDX line agree with this.
+[[annotations]]
+path = "**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "NONE"
+SPDX-License-Identifier = "CC0-1.0"

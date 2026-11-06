@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  schedule:
+    - cron: "0 18 * * *"
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "23"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Generation, tests, boxing, allocation, coverage
+        run: ./gradlew check koverVerify :build-logic:test --continue
+      - name: License headers
+        uses: fsfe/reuse-action@v5
+      - name: E2E in the judge image
+        run: ./e2e/run-e2e.sh
+
+  nightly:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "23"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Long differential tests
+        run: ./gradlew test -Dops=2000000 -Dseed=${{ github.run_number }}
+      - name: Mutation testing
+        run: ./gradlew pitest
+      - name: Benchmarks
+        run: ./gradlew jmh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nightly-reports
+          path: |
+            build/reports/pitest
+            build/results/jmh

@@ -2,7 +2,7 @@
 
 AtCoder の Kotlin 向けに、ボクシングなしで使えるプリミティブ型コレクションを作るプロジェクトです。
 
-**開発中です。コレクションはまだ実装していないので、今は使えません。**
+**開発中です。今は `IntList` だけが動きます。**
 
 ## 予定している内容
 
@@ -26,10 +26,30 @@ AtCoder の Kotlin 向けに、ボクシングなしで使えるプリミティ�
 ## ビルド
 
 ```sh
-./gradlew test
+./gradlew check koverVerify   # テスト、ボクシング検査、カバレッジなど
+./gradlew generateSources     # templates/ を変更したら実行して generated/ を更新
+./e2e/run-e2e.sh              # ジャッジ再現環境での E2E(Docker が必要)
+./gradlew pitest              # 変異テスト(数分かかる)
 ```
 
-JDK 23 のツールチェーンが必要です。
+JDK 23 が必要です。
+
+## 提出
+
+`Main.kt` では `import ac_primitive_collections.*` と書きます。AtCoder にはこのライブラリが入っていないので、そのまま提出すると CE になります。バンドルしたものを提出します。
+
+`Main.kt` のあるフォルダで次を実行すると、提出するコードがクリップボードに入ります。あとは AtCoder に貼り付けるだけです。
+
+```sh
+bundle -p     # 練習(過去問など)
+bundle        # コンテスト(プッシュ済みのタグの状態でなければエラー)
+```
+
+どのフォルダからでも使えるように、最初に 1 回だけリンクを作ります。
+
+```sh
+ln -s "$PWD/bundle" ~/.local/bin/bundle
+```
 
 ## 生成 AI ルールについて
 
