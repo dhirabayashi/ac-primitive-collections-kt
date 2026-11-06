@@ -871,7 +871,8 @@ class KTypeList { /* KType を使って実装 */ }
 | CI の定義 | 作成済み、**未実行**(未 push のため) |
 | タグの作成と push | 完了(`v0.1.0`) |
 | AtCoder への実提出と AC | 完了。ABC 231 C を貼り付け形式で提出して AC、509 ms(2026-11-06、未公開状態のコードで、終了済みコンテストへの提出) |
-| コードテストでの比較、拡張率、ソース長とコンパイル時間の上限 | **未実施**(本人の操作が必要)。プローブは `e2e/experiments/` |
+| コードテストでの `java.util` との比較 | 完了(`docs/judge-env.md` §6) |
+| 拡張率、ソース長とコンパイル時間の上限 | **未実施**(本人の操作が必要)。プローブは `e2e/experiments/` |
 
 **Phase 2 に残したもの**
 
@@ -1017,7 +1018,8 @@ AVL / WBT と B+ 木の比較実験(Int キーのみで実装)、方式の決定
 | コンパイル時間の上限 | 未確認で、最大の未知数。増え方の参考値は `docs/judge-env.md` | Phase 1(`e2e/experiments/size-probe.py` のファイルをコードテストで確認) |
 | ソース長の上限 | 未確認。512 KiB という認識はあるが、確認できたルールには記載なし | Phase 1(同上) |
 | `nextCapacity` の拡張率 | 暫定で 1.5 倍 | Phase 1(`e2e/experiments/GrowthRate.kt` をコードテストで確認) |
-| `java.util` との 1 回実行の比較(S5) | arm64 の JMH のみ | Phase 1(`e2e/experiments/compare-arraylist/Main.kt` をコードテストで確認) |
+| `java.util` との 1 回実行の比較(S5) | `IntList` は確認済み。10^6 要素で 2.1 倍速い(`docs/judge-env.md` §6)。他のコレクションは各 Phase で確認 | 各 Phase |
+| メモリの目標(`java.util` 比 1/3 以下) | 未確認。プロセス全体では 0.67 倍だが JVM の基礎分を含む | Phase 2 |
 | `add` の n = 10^6 での速度 | `modCount` の有無と関係なく、同じ構造の比較クラスより約 1.5 倍遅い(0.40 と 0.55〜0.68 ops/ms)。原因は未解明。`ArrayList`(0.25)には勝つ | Phase 2 |
 | コードテストと本番のジャッジが同じ構成か | 未確認。コードテストの実測は `docs/judge-env.md` | 確認手段なし |
 | `Arrays.sort` の SIMD 実装が実際に使われているか | 直接は未確認。実機の速度は SIMD の利用と整合する | 確認手段なし |
