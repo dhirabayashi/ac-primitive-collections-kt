@@ -22,7 +22,7 @@ private val comparableOperators = mapOf(
     "K_HASH" to "\$0.hashCode()",
 )
 
-// IEEE operators disagree with Arrays.sort on NaN and -0.0, so floating types use the total order.
+// IEEE operators disagree with Arrays.sort on NaN and -0.0, so Double uses the total order.
 private val totalOrderOperators = mapOf(
     "K_EQ" to "(\$0.compareTo(\$1) == 0)",
     "K_LT" to "(\$0.compareTo(\$1) < 0)",
@@ -43,20 +43,7 @@ val TYPE_SPECS: Map<String, TypeSpec> = listOf(
         "Double", "0.0", setOf("K_NUMERIC", "K_FLOATING"),
         totalOrderOperators + numericSum("Double", "0.0", "\$0"),
     ),
-    TypeSpec(
-        "Float", "0f", setOf("K_NUMERIC", "K_FLOATING"),
-        totalOrderOperators + numericSum("Double", "0.0", "\$0.toDouble()"),
-    ),
-    TypeSpec(
-        "Short", "0", setOf("K_NUMERIC", "K_INTEGRAL"),
-        comparableOperators + numericSum("Long", "0L", "\$0.toLong()"),
-    ),
-    TypeSpec(
-        "Byte", "0", setOf("K_NUMERIC", "K_INTEGRAL"),
-        comparableOperators + numericSum("Long", "0L", "\$0.toLong()"),
-    ),
     TypeSpec("Char", "'\\u0000'", setOf("K_HAS_RANGE"), comparableOperators),
-    TypeSpec("Boolean", "false", setOf("K_BOOLEAN"), comparableOperators),
 ).associateBy { it.name }
 
 /** How the value side of a pair template fills in. [tokens] apply in order. */
