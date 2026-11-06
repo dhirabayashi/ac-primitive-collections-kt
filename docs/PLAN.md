@@ -899,9 +899,9 @@ class KTypeList { /* KType を使って実装 */ }
 | 項目 | 状態 |
 |---|---|
 | `LongIntMinHeap`(テンプレート `KTypeVTypeMinHeap`、4 分ヒープ) | 完了。全ゲートを通過(分岐カバレッジ 100%、変異テスト 96%)、E2E 通過 |
-| Dijkstra の代表問題 | 完了。ABC 340 D で AC、239 ms(`docs/judge-env.md` §7) |
-| `PriorityQueue` との比較 | 完了。Dijkstra 部分が 2.3 倍速い(`docs/judge-env.md` §7) |
-| タグの作成 | **未実施**。公開タグは `v0.1.0` のままなので、`LongIntMinHeap` はコンテストではまだ使えない |
+| Dijkstra の代表問題 | 完了。ABC 340 D で AC。`modCount` を入れた後の今のコードで 269 ms(入れる前は 239 ms、`docs/judge-env.md` §7) |
+| `PriorityQueue` との比較 | 完了。Dijkstra 部分が 2.3 倍速い。`modCount` を入れた後も処理時間に悪化は見られない(`docs/judge-env.md` §7) |
+| タグの作成 | 完了(`v0.2.0`)。ペアヒープをコンテストで使える |
 | 他の型の組み合わせと `Max` のペアヒープ | 完了。§5.1 の 18 クラスを 1 つのテンプレートから生成し、全ゲートを通過(分岐カバレッジ 100%、変異テスト 91%)、E2E 通過。AtCoder への提出は判断が変わらないので行っていない |
 | 全型の `List` | **未実施**(「Phase 2 に残したもの」も参照)。試しに展開した結果(コミットしていない): Char と Boolean は `K_SUM_TYPE` がなく生成の時点で失敗。Long、Double、Float、Short、Byte は `KTypeListSort` で 1 件ずつコンパイルエラー。コンパイラは早い段階で止まるので、エラーがこれだけとは限らない |
 | `Deque`、単純ヒープ、インデックス付きヒープ、配列拡張 | **未実施** |
@@ -1051,7 +1051,6 @@ AVL / WBT と B+ 木の比較実験(Int キーのみで実装)、方式の決定
 | `add` の n = 10^6 での速度 | `modCount` の有無と関係なく、同じ構造の比較クラスより約 1.5 倍遅い(0.40 と 0.55〜0.68 ops/ms)。原因は未解明。`ArrayList`(0.25)には勝つ | Phase 2 |
 | コードテストと本番のジャッジが同じ構成か | 未確認。コードテストの実測は `docs/judge-env.md` | 確認手段なし |
 | `Arrays.sort` の SIMD 実装が実際に使われているか | 直接は未確認。実機の速度は SIMD の利用と整合する | 確認手段なし |
-| ヒープの `modCount` の速度への影響 | AtCoder では未計測。ローカル(arm64)の Dijkstra では差が見えなかった(`docs/judge-env.md` §7)。AtCoder の §7 の値は `modCount` を入れる前のもの | 次にヒープを AtCoder で測るとき |
 | §5〜§7 の性能に関する見込みと目標値 | 仮説。実測後に確定 | 各 Phase。B+ 木の速度差は Phase 4 |
 
 ---

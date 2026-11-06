@@ -33,7 +33,7 @@ reuse lint                                   # 未導入なら venv に pip inst
 
 - 解答用プロジェクトは `/Users/daiki/IdeaProjects/atcoder`(git 管理外)です。このリポジトリを `includeBuild` しています。提出コードは `./submit` でクリップボードに入ります。
 - `./submit -p` は練習用で、今の作業状態からバンドルします。
-- `./submit`(コンテスト用)は、このリポジトリが **push 済みのタグの位置**で、`generated/main` と `src/main` に変更がないときだけ動きます。公開タグは `v0.1.0`(`IntList` のみ)です。開発中のブランチにいると失敗するので、コンテストの前に `git checkout v0.1.0` が必要です。「最新の push 済みタグからバンドルする」改善案は未着手です。
+- `./submit`(コンテスト用)は、このリポジトリが **push 済みのタグの位置**で、`generated/main` と `src/main` に変更がないときだけ動きます。公開タグは `v0.2.0`(`IntList`、`IntSubList`、ペアヒープ 18 クラス)です。開発中のブランチにいると失敗するので、コンテストの前に `git checkout v0.2.0` が必要です。「最新の push 済みタグからバンドルする」改善案は未着手です。
 - コードテスト用のファイルは次のように作ります。
 
   ```sh
