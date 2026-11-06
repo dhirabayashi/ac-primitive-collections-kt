@@ -6,9 +6,12 @@ object TemplateEngine {
     private val DIRECTIVE = Regex("""^\s*//#(if|else|endif)\b\s*(\S*)\s*$""")
     private val MACRO_NAME = Regex("""\bK_[A-Z_]+\b""")
 
-    fun expand(template: String, spec: TypeSpec): String {
+    /** [valueType] fills `VType` in templates that hold a key and a value. */
+    fun expand(template: String, spec: TypeSpec, valueType: String? = null): String {
         val selected = applyConditionals(template, spec)
-        val expanded = expandMacros(selected, spec)
+        val expanded = expandMacros(selected, spec).let { text ->
+            if (valueType == null) text else text.replace("VType", valueType)
+        }
         return expanded
             .replace("KTYPE", spec.name.uppercase())
             .replace("KType", spec.name)

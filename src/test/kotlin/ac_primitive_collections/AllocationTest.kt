@@ -74,6 +74,18 @@ class AllocationTest {
     fun aggregates() = assertReachesZeroAllocation("aggregates") { sink += list.sum() + list.min() + list.lowerBound(3) }
 
     @Test
+    fun pairHeapWithinCapacity() {
+        val heap = LongIntMinHeap(200)
+        assertReachesZeroAllocation("pair heap") {
+            for (i in 0 until 100) heap.add((i * 7919 % 101).toLong(), i)
+            while (heap.isNotEmpty()) {
+                sink += heap.firstKey() + heap.firstValue()
+                heap.removeFirst()
+            }
+        }
+    }
+
+    @Test
     fun forUntil() = assertReachesZeroAllocation("for until") {
         for (i in 0 until list.size) sink += list[i]
     }

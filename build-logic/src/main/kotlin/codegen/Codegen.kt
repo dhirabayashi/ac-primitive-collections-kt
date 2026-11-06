@@ -8,7 +8,11 @@ object Codegen {
     /** Phase 1 runs the whole pipeline on Int only. See docs/PLAN.md, section 11. */
     val GENERATED_TYPES = listOf("Int")
 
+    /** Key and value types of pair templates, from docs/PLAN.md section 5.1. Phase 2 starts with Dijkstra's pair. */
+    val GENERATED_PAIRS = listOf("Long" to "Int")
+
     private const val TEMPLATE_PREFIX = "KType"
+    private const val PAIR_TEMPLATE_PREFIX = "KTypeVType"
     // REUSE-IgnoreStart
     private const val SPDX = "// SPDX-License-Identifier: CC0-1.0\n"
     // REUSE-IgnoreEnd
@@ -28,10 +32,17 @@ object Codegen {
             val text = template.readText().replace("\r\n", "\n")
             require(text.startsWith(SPDX)) { "${template.name} must start with the SPDX line" }
             val body = text.removePrefix(SPDX)
+            val label = "${templateDir.name}/${template.name}"
+            if (template.name.startsWith(PAIR_TEMPLATE_PREFIX)) {
+                for ((key, value) in GENERATED_PAIRS) {
+                    val name = template.name.replace(PAIR_TEMPLATE_PREFIX, key + value)
+                    result["ac_primitive_collections/$name"] = header(label) + TemplateEngine.expand(body, TYPE_SPECS.getValue(key), value)
+                }
+                continue
+            }
             for (typeName in types) {
                 val spec = TYPE_SPECS.getValue(typeName)
                 val name = template.name.replace(TEMPLATE_PREFIX, spec.name)
-                val label = "${templateDir.name}/${template.name}"
                 result["ac_primitive_collections/$name"] = header(label) + TemplateEngine.expand(body, spec)
             }
         }

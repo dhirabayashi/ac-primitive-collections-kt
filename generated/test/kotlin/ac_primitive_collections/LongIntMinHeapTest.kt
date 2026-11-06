@@ -1,0 +1,265 @@
+// SPDX-License-Identifier: CC0-1.0
+// Generated from test-templates/KTypeVTypeMinHeapTest.kt. Do not edit; run ./gradlew generateSources.
+// Created with generative AI. AtCoder's rules require the reference URL when you copy this
+// into a contest submission: https://github.com/dhirabayashi/ac-primitive-collections-kt
+package ac_primitive_collections
+
+import kotlin.random.Random
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
+import kotlin.test.assertTrue
+
+class LongIntMinHeapTest {
+    private data class Op(val kind: Kind, val key: Long, val value: Int)
+
+    private enum class Kind(val group: Int) { ADD(0), REMOVE_FIRST(1), REPLACE_FIRST(2), COPY_THEN_SWAP(2), CLEAR(2) }
+
+    private fun randomOps(seed: Long, count: Int, distribution: Distribution, domain: ValueDomain): List<Op> {
+        val random = Random(seed)
+        val groups = Kind.entries.groupBy { it.group }
+        return List(count) { step ->
+            val group = groups.getValue(random.nextWeighted(distribution))
+            val key: Long = when (domain) {
+                ValueDomain.SMALL -> random.nextInt(5).toLong()
+                ValueDomain.FULL -> random.nextLong().toLong()
+                ValueDomain.BOUNDARY -> BOUNDARY_KEYS[random.nextInt(BOUNDARY_KEYS.size)]
+                ValueDomain.MONOTONIC -> step.toLong()
+            }
+            Op(group[random.nextInt(group.size)], key, random.nextInt(1000).toInt())
+        }
+    }
+
+    /** The model is a plain list. Its minimum key is the expected first key, and the first pair must be in it. */
+    private fun check(ops: List<Op>) {
+        var heap = LongIntMinHeap()
+        val model = ArrayList<Pair<Long, Int>>()
+        fun removeFirstFromModel(): Pair<Long, Int> {
+            val minimum = model.minOf { it.first }
+            assertEquals(minimum, heap.firstKey())
+            val first = heap.firstKey() to heap.firstValue()
+            assertTrue(model.remove(first), "$first is not in the model")
+            return first
+        }
+        for (op in ops) {
+            when (op.kind) {
+                Kind.ADD -> {
+                    heap.add(op.key, op.value)
+                    model.add(op.key to op.value)
+                }
+                Kind.REMOVE_FIRST -> if (model.isNotEmpty()) {
+                    removeFirstFromModel()
+                    heap.removeFirst()
+                }
+                Kind.REPLACE_FIRST -> if (model.isNotEmpty()) {
+                    removeFirstFromModel()
+                    heap.replaceFirst(op.key, op.value)
+                    model.add(op.key to op.value)
+                }
+                Kind.COPY_THEN_SWAP -> {
+                    val copy = heap.copy()
+                    assertEquals(heap, copy)
+                    heap = copy
+                }
+                Kind.CLEAR -> if (op.value.toInt() < 5) {
+                    heap.clear()
+                    model.clear()
+                }
+            }
+            assertEquals(model.size, heap.size)
+            assertEquals(model.isEmpty(), heap.isEmpty())
+            if (model.isNotEmpty()) assertEquals(model.minOf { it.first }, heap.firstKey())
+        }
+        val rest = ArrayList<Pair<Long, Int>>()
+        heap.forEachUnordered { k, v -> rest += k to v }
+        assertEquals(model.sortedWith(compareBy({ it.first }, { it.second })), rest.sortedWith(compareBy({ it.first }, { it.second })))
+        while (model.isNotEmpty()) {
+            removeFirstFromModel()
+            heap.removeFirst()
+        }
+        assertTrue(heap.isEmpty())
+    }
+
+    @Test
+    fun matchesAModelUnderRandomOperations() {
+        for (seed in TestConfig.seeds) {
+            for (distribution in Distribution.entries) {
+                for (domain in ValueDomain.entries) {
+                    // The model's minimum is O(n), so keep the runs short and rely on many of them.
+                    val ops = randomOps(seed, minOf(TestConfig.operations / 8, 3000), distribution, domain)
+                    OperationRunner.run("LongIntMinHeap $distribution $domain", seed, ops, ::check)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun everyInsertionOrderOfSmallHeapsSorts() {
+        val base = IntList(7) { it }
+        do {
+            val heap = LongIntMinHeap()
+            base.forEach { heap.add(it.toLong(), (it * 2).toInt()) }
+            for (expected in 0 until 7) {
+                assertEquals(expected.toLong(), heap.firstKey())
+                assertEquals((expected * 2).toInt(), heap.firstValue())
+                heap.removeFirst()
+            }
+            assertTrue(heap.isEmpty())
+        } while (base.nextPermutation())
+    }
+
+    @Test
+    fun sortsLargeHeapsOfEverySize() {
+        // Sizes around the arity's powers exercise a last parent with one to four children.
+        for (n in (0..30).toList() + listOf(84, 85, 86, 87, 341, 342, 343, 344, 345, 1000, 5000)) {
+            val random = Random(n)
+            val keys = List(n) { random.nextLong().toLong() }
+            val heap = LongIntMinHeap(0)
+            keys.forEachIndexed { i, k -> heap.add(k, i.toInt()) }
+            val out = ArrayList<Long>()
+            while (heap.isNotEmpty()) {
+                val k = heap.firstKey()
+                assertEquals(k, keys[heap.firstValue().toInt()])
+                out += k
+                heap.removeFirst()
+            }
+            assertEquals(keys.sorted(), out)
+        }
+    }
+
+    @Test
+    fun boundaryKeysOrderCorrectly() {
+        val heap = LongIntMinHeap()
+        BOUNDARY_KEYS.reversed().forEachIndexed { i, k -> heap.add(k, i.toInt()) }
+        for (expected in BOUNDARY_KEYS) {
+            assertEquals(expected, heap.firstKey())
+            heap.removeFirst()
+        }
+    }
+
+    @Test
+    fun emptyHeapFails() {
+        val heap = LongIntMinHeap()
+        assertFailsWith<NoSuchElementException> { heap.firstKey() }
+        assertFailsWith<NoSuchElementException> { heap.firstValue() }
+        assertFailsWith<NoSuchElementException> { heap.removeFirst() }
+        assertFailsWith<NoSuchElementException> { heap.replaceFirst(0L, 0.toInt()) }
+        assertEquals("[]", heap.toString())
+    }
+
+    @Test
+    fun replaceFirstKeepsTheOrder() {
+        val heap = LongIntMinHeap()
+        heap.add(1.toLong(), 1.toInt())
+        heap.add(2.toLong(), 2.toInt())
+        heap.add(3.toLong(), 3.toInt())
+        heap.replaceFirst(5.toLong(), 5.toInt())
+        assertEquals(2.toLong(), heap.firstKey())
+        assertEquals(3, heap.size)
+        heap.replaceFirst(0.toLong(), 0.toInt())
+        assertEquals(0.toLong(), heap.firstKey())
+        assertEquals(0.toInt(), heap.firstValue())
+    }
+
+    @Test
+    fun removingTheOnlyElementLeavesItEmpty() {
+        val heap = LongIntMinHeap()
+        heap.add(1.toLong(), 1.toInt())
+        heap.removeFirst()
+        assertTrue(heap.isEmpty())
+        assertFalse(heap.isNotEmpty())
+        heap.add(2.toLong(), 2.toInt())
+        assertTrue(heap.isNotEmpty())
+        assertEquals(2.toLong(), heap.firstKey())
+    }
+
+    @Test
+    fun capacityControl() {
+        assertFailsWith<IllegalArgumentException> { LongIntMinHeap(-1) }
+        val heap = LongIntMinHeap(2)
+        assertEquals(2, heap.capacity)
+        heap.ensureCapacity(2)
+        assertEquals(2, heap.capacity)
+        heap.ensureCapacity(50)
+        assertEquals(50, heap.capacity)
+        heap.add(1.toLong(), 1.toInt())
+        heap.clear()
+        assertEquals(0, heap.size)
+        assertEquals(50, heap.capacity)
+        assertEquals(DEFAULT_CAPACITY, LongIntMinHeap().capacity)
+    }
+
+    @Test
+    fun copyIsIndependent() {
+        val heap = LongIntMinHeap()
+        heap.add(1.toLong(), 1.toInt())
+        val copy = heap.copy()
+        copy.add(0.toLong(), 0.toInt())
+        copy.replaceFirst(9.toLong(), 9.toInt())
+        assertEquals(1, heap.size)
+        assertEquals(1.toLong(), heap.firstKey())
+        assertEquals(1.toInt(), heap.firstValue())
+    }
+
+    @Test
+    fun text() {
+        val heap = LongIntMinHeap()
+        heap.add(1.toLong(), 2.toInt())
+        heap.add(3.toLong(), 4.toInt())
+        assertEquals("[1=2, 3=4]", heap.toString())
+    }
+
+    private fun heapOf(vararg pairs: Pair<Int, Int>): LongIntMinHeap {
+        val heap = LongIntMinHeap()
+        pairs.forEach { (k, v) -> heap.add(k.toLong(), v.toInt()) }
+        return heap
+    }
+
+    @Test
+    fun equalityIgnoresLayoutAndTieOrder() {
+        val a = heapOf(1 to 1, 2 to 2, 2 to 3, 3 to 4)
+        val b = heapOf(3 to 4, 2 to 3, 2 to 2, 1 to 1)
+        assertEquals(a, a)
+        assertEquals(a, b)
+        assertEquals(a.hashCode(), b.hashCode())
+        assertEquals(a.size, b.size)
+        assertEquals(a.toString().length, b.toString().length)
+    }
+
+    @Test
+    fun equalityDetectsDifferences() {
+        val a = heapOf(1 to 1, 2 to 2)
+        assertNotEquals(a, heapOf(1 to 1))
+        assertNotEquals(a, heapOf(1 to 1, 3 to 2))
+        assertNotEquals(a, heapOf(1 to 1, 2 to 3))
+        assertNotEquals(heapOf(1 to 1, 1 to 2), heapOf(1 to 1, 2 to 2))
+        assertNotEquals(heapOf(1 to 1, 2 to 2), heapOf(1 to 1, 1 to 2))
+        assertFalse(a.equals(null))
+        assertFalse(a.equals("x"))
+        assertNotEquals(a.hashCode(), heapOf(1 to 1, 2 to 3).hashCode())
+    }
+
+    @Test
+    fun hashCodeFollowsTheFormulaAndIgnoresStaleSlots() {
+        val heap = heapOf(1 to 2, 3 to 4, 5 to 6)
+        heap.removeFirst()
+        val expected = 2 + (31 * 3.toLong().hashCode() + 4.toInt().hashCode()) + (31 * 5.toLong().hashCode() + 6.toInt().hashCode())
+        assertEquals(expected, heap.hashCode())
+        assertEquals(heapOf(3 to 4, 5 to 6).hashCode(), heap.hashCode())
+    }
+
+    @Test
+    fun equalityLeavesTheHeapsIntact() {
+        val a = heapOf(1 to 1, 2 to 2)
+        val b = heapOf(2 to 2, 1 to 1)
+        assertEquals(a, b)
+        assertEquals(2, a.size)
+        assertEquals(2, b.size)
+    }
+
+    private companion object {
+        val BOUNDARY_KEYS = listOf(Long.MIN_VALUE, (-1).toLong(), 0L, 1.toLong(), Long.MAX_VALUE)
+    }
+}

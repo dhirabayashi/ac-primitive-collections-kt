@@ -2,14 +2,14 @@
 
 `./gradlew pitest` で生存した変異を 1 件ずつ確認した記録です(§7.1)。
 
-## 結果(Phase 1、`IntList` と `IntSubList`)
+## 結果(`IntList`、`IntSubList`、`LongIntMinHeap`)
 
 | 状態 | 件数 |
 |---|---|
-| KILLED | 527 |
-| TIMED_OUT(検出扱い) | 14 |
-| MEMORY_ERROR(検出扱い) | 1 |
-| SURVIVED | 21 |
+| KILLED | 596 |
+| TIMED_OUT(検出扱い) | 18 |
+| MEMORY_ERROR(検出扱い) | 2 |
+| SURVIVED | 27 |
 | スコア | 96%(基準 90%) |
 
 ## PIT の対象外
@@ -35,3 +35,7 @@
 | `IntListSort.kt` `mergeSortInt` 70 | 作業領域の計算の境界 | 作業領域が大きくなるだけ |
 | `IntListSort.kt` `mergeSortInt` 82 | 打ち切りの境界 | 何もしないパスが 1 回増えるだけ |
 | `IntListSort.kt` `mergeInt` 102 | `<= 0` を `< 0` に(マージ省略の判定) | 省略しなくても安定マージの結果は同じ |
+| `LongIntMinHeap.kt` `add` | `n + 1L` を `n - 1L` に | `IntList.add` と同じ理由で結果が同じ |
+| `LongIntMinHeap.kt` `removeFirst` | `last > 0` を `>= 0` に | 空になるときの `siftDown` は、先頭に自分自身を書き戻すだけ |
+| `LongIntMinHeap.kt` `siftUp`、`siftDown` の比較 | `<` を `<=` に | 等しいキーの間の順序だけが変わる。この順序は不定と定めている |
+| `LongIntMinHeap.kt` `siftDown` の子の範囲 | `>` を `>=` に | ちょうど 4 個のときはどちらの式も同じ値になる |

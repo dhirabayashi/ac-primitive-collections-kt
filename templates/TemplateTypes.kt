@@ -9,6 +9,8 @@ typealias KTypeArray = IntArray
 typealias KTypeIterator = IntIterator
 typealias KTypeRange = IntRange
 typealias K_SUM_TYPE = Long
+typealias VType = Int
+typealias VTypeArray = IntArray
 
 const val K_ZERO: KType = 0
 const val K_SUM_ZERO: K_SUM_TYPE = 0L

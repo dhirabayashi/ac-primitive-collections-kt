@@ -18,6 +18,14 @@ class TemplateEngineTest {
     }
 
     @Test
+    fun fillsKeyAndValueTypes() {
+        assertEquals(
+            "class LongIntMinHeap { val k: LongArray; val v: IntArray }",
+            TemplateEngine.expand("class KTypeVTypeMinHeap { val k: KTypeArray; val v: VTypeArray }", TYPE_SPECS.getValue("Long"), "Int"),
+        )
+    }
+
+    @Test
     fun usesTotalOrderOperatorsForFloatingTypes() {
         assertEquals("(a.compareTo(b) == 0)", TemplateEngine.expand("K_EQ(a, b)", double))
         assertEquals("(a.compareTo(b) < 0)", TemplateEngine.expand("K_LT(a, b)", double))

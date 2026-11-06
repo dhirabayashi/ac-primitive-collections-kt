@@ -419,7 +419,7 @@ while (pq.isNotEmpty()) {
 }
 ```
 
-Pair を返せないので `firstKey()` / `firstValue()` に分けます。内部は並列配列または 4 分ヒープとし、実測で決めます。
+Pair を返せないので `firstKey()` / `firstValue()` に分けます。内部は並列配列の 4 分ヒープです。AtCoder のコードテストでは 2 分ヒープとの差を判別できず、切り替える根拠がないので 4 分のままにしました(`docs/judge-env.md` §7)。
 
 **インデックス付きヒープ**: 添字集合 `[0, n)` に対する `set(i, key)`、`decreaseKey`、`increaseKey`、`remove(i)`、`contains(i)`、`keyOf(i)`、`firstIndex()`。
 
@@ -868,7 +868,7 @@ class KTypeList { /* KType を使って実装 */ }
 | バンドラ、公開確認、参照 URL の付与 | 完了 |
 | E2E(貼り付けと jar、Docker)、インストールのリハーサル | 完了 |
 | JMH | 完了(arm64 の値のみ。§7.6 のとおり判断には使わない) |
-| CI の定義 | 作成済み、**未実行**(未 push のため) |
+| CI | 完了(タグと PR #1 で通過) |
 | タグの作成と push | 完了(`v0.1.0`) |
 | AtCoder への実提出と AC | 完了。ABC 231 C を貼り付け形式で提出して AC、509 ms(2026-11-06、未公開状態のコードで、終了済みコンテストへの提出) |
 | コードテストでの `java.util` との比較 | 完了(`docs/judge-env.md` §6) |
@@ -886,6 +886,19 @@ class KTypeList { /* KType を使って実装 */ }
 全型の `List`、`Deque`、単純ヒープ、ペアヒープ、インデックス付きヒープ、配列拡張。ソートの実測(§6)と採否の決定。
 
 **完了条件**: Dijkstra と argsort の代表問題が AC。`java.util` 比の性能を記録。
+
+**Phase 2 の進捗**
+
+| 項目 | 状態 |
+|---|---|
+| `LongIntMinHeap`(テンプレート `KTypeVTypeMinHeap`、4 分ヒープ) | 完了。全ゲートを通過(分岐カバレッジ 100%、変異テスト 96%)、E2E 通過 |
+| Dijkstra の代表問題 | 完了。ABC 340 D で AC、239 ms(`docs/judge-env.md` §7) |
+| `PriorityQueue` との比較 | 完了。Dijkstra 部分が 2.3 倍速い(`docs/judge-env.md` §7) |
+| タグの作成 | **未実施**。公開タグは `v0.1.0` のままなので、`LongIntMinHeap` はコンテストではまだ使えない |
+| 他の型の組み合わせと `Max` のペアヒープ | **未実施**。生成はまだ Long-Int の `Min` だけ |
+| 全型の `List` | **未実施**。Int 以外の展開は未コンパイル(「Phase 2 に残したもの」も参照) |
+| `Deque`、単純ヒープ、インデックス付きヒープ、配列拡張 | **未実施** |
+| ソートの実測と採否(§6)、argsort の代表問題 | **未実施** |
 
 ### Phase 3: ハッシュ
 
@@ -1015,10 +1028,10 @@ AVL / WBT と B+ 木の比較実験(Int キーのみで実装)、方式の決定
 
 | 項目 | 状況 | 確認時期 |
 |---|---|---|
-| コンパイル時間の上限 | 未確認で、最大の未知数。増え方の参考値は `docs/judge-env.md` | Phase 1(`e2e/experiments/size-probe.py` のファイルをコードテストで確認) |
-| ソース長の上限 | 未確認。512 KiB という認識はあるが、確認できたルールには記載なし | Phase 1(同上) |
-| `nextCapacity` の拡張率 | 暫定で 1.5 倍 | Phase 1(`e2e/experiments/GrowthRate.kt` をコードテストで確認) |
-| `java.util` との 1 回実行の比較(S5) | `IntList` は確認済み。10^6 要素で 2.1 倍速い(`docs/judge-env.md` §6)。他のコレクションは各 Phase で確認 | 各 Phase |
+| コンパイル時間の上限 | 未確認で、最大の未知数。増え方の参考値は `docs/judge-env.md` | 未実施。Phase 2 以降(`e2e/experiments/size-probe.py` のファイルをコードテストで確認。手作業なので依頼は最小限にする) |
+| ソース長の上限 | 未確認。512 KiB という認識はあるが、確認できたルールには記載なし | 同上 |
+| `nextCapacity` の拡張率 | 暫定で 1.5 倍 | 未実施。Phase 2 以降(`e2e/experiments/GrowthRate.kt`) |
+| `java.util` との 1 回実行の比較(S5) | `IntList` は 10^6 要素で 2.1 倍速い(`docs/judge-env.md` §6)。`LongIntMinHeap` は実行時間全体で 1.4 倍速い(同 §7)。他のコレクションは各 Phase で確認 | 各 Phase |
 | メモリの目標(`java.util` 比 1/3 以下) | 未確認。プロセス全体では 0.67 倍だが JVM の基礎分を含む | Phase 2 |
 | `add` の n = 10^6 での速度 | `modCount` の有無と関係なく、同じ構造の比較クラスより約 1.5 倍遅い(0.40 と 0.55〜0.68 ops/ms)。原因は未解明。`ArrayList`(0.25)には勝つ | Phase 2 |
 | コードテストと本番のジャッジが同じ構成か | 未確認。コードテストの実測は `docs/judge-env.md` | 確認手段なし |
