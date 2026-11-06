@@ -74,6 +74,61 @@ class AllocationTest {
     fun aggregates() = assertReachesZeroAllocation("aggregates") { sink += list.sum() + list.min() + list.lowerBound(3) }
 
     @Test
+    fun pairHeapWithinCapacity() {
+        val heap = LongIntMinHeap(200)
+        assertReachesZeroAllocation("pair heap") {
+            for (i in 0 until 100) heap.add((i * 7919 % 101).toLong(), i)
+            while (heap.isNotEmpty()) {
+                sink += heap.firstKey() + heap.firstValue()
+                heap.removeFirst()
+            }
+        }
+    }
+
+    @Test
+    fun doubleKeyedMaxHeapWithinCapacity() {
+        val heap = DoubleLongMaxHeap(200)
+        assertReachesZeroAllocation("double max heap") {
+            for (i in 0 until 100) heap.add((i * 7919 % 101).toDouble(), i.toLong())
+            while (heap.isNotEmpty()) {
+                sink += heap.firstValue()
+                heap.removeFirst()
+            }
+        }
+    }
+
+    @Test
+    fun objValueHeapWithinCapacity() {
+        val heap = IntObjMinHeap<String>(200)
+        assertReachesZeroAllocation("obj value heap") {
+            for (i in 0 until 100) heap.add(i * 7919 % 101, "x")
+            while (heap.isNotEmpty()) {
+                sink += heap.firstValue().length
+                heap.removeFirst()
+            }
+        }
+    }
+
+    @Test
+    fun heapForEachUnordered() {
+        val heap = LongIntMinHeap(200)
+        for (i in 0 until 100) heap.add(i.toLong(), i)
+        assertReachesZeroAllocation("forEachUnordered") { heap.forEachUnordered { key, value -> sink += key + value } }
+    }
+
+    @Test
+    fun heapEqualsDoesNotCopyTheReservedCapacity() {
+        val a = IntIntMinHeap()
+        val b = IntIntMinHeap()
+        a.ensureCapacity(1_000_000)
+        b.ensureCapacity(1_000_000)
+        a.add(1, 1)
+        b.add(2, 2)
+        val used = allocated { assertTrue(a != b) }
+        assertTrue(used < 100_000, "equals allocated $used bytes for two pairs")
+    }
+
+    @Test
     fun forUntil() = assertReachesZeroAllocation("for until") {
         for (i in 0 until list.size) sink += list[i]
     }

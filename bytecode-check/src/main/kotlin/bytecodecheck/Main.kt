@@ -5,8 +5,13 @@ import java.io.File
 import java.util.zip.ZipFile
 import kotlin.system.exitProcess
 
-private const val USAGE = "Usage: bytecode-check (--library | --strict) [--class-prefix PREFIX]... PATH\n" +
-    "PATH is a jar or a directory of class files. With --class-prefix, only matching classes are checked."
+private const val USAGE = "Usage: bytecode-check (--library | --strict) [--class-prefix PREFIX]... [--exclude-prefix PREFIX]... PATH\n" +
+    "PATH is a jar or a directory of class files. With --class-prefix, only matching classes are checked.\n" +
+    "With --exclude-prefix, matching classes are skipped, such as the Kotlin runtime in a jar built with -include-runtime."
+
+/** Whether the class file at [name] is in scope. Exclusions win, so that a new class is checked by default. */
+internal fun isChecked(name: String, prefixes: List<String>, excludedPrefixes: List<String>): Boolean =
+    excludedPrefixes.none(name::startsWith) && (prefixes.isEmpty() || prefixes.any(name::startsWith))
 
 private fun classFiles(path: File): Sequence<Pair<String, ByteArray>> =
     if (path.isDirectory) {
@@ -25,6 +30,7 @@ private fun classFiles(path: File): Sequence<Pair<String, ByteArray>> =
 fun main(args: Array<String>) {
     var mode: Mode? = null
     val prefixes = mutableListOf<String>()
+    val excludedPrefixes = mutableListOf<String>()
     var path: File? = null
     var i = 0
     while (i < args.size) {
@@ -32,6 +38,7 @@ fun main(args: Array<String>) {
             "--library" -> mode = Mode.LIBRARY
             "--strict" -> mode = Mode.STRICT
             "--class-prefix" -> prefixes += args[++i]
+            "--exclude-prefix" -> excludedPrefixes += args[++i]
             else -> path = File(arg)
         }
         i++
@@ -44,7 +51,7 @@ fun main(args: Array<String>) {
     }
     var checked = 0
     val findings = classFiles(chosenPath)
-        .filter { (name, _) -> prefixes.isEmpty() || prefixes.any(name::startsWith) }
+        .filter { (name, _) -> isChecked(name, prefixes, excludedPrefixes) }
         .flatMap { (_, bytes) ->
             checked++
             BoxingChecker.check(bytes, chosenMode)

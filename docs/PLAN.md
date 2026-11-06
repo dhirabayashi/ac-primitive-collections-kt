@@ -353,6 +353,8 @@ K はキー、V は値です。ソース上で約 130 クラスを見込みま�
 
 すべてのコレクションに次を用意します: `size`、`isEmpty()`、`isNotEmpty()`、`clear()`、`copy()`、`toXArray()`、`equals`、`hashCode`、`toString`、`appendTo(StringBuilder, separator)`、初期容量つきコンストラクタ、`intListOf(vararg)` 形式の生成関数、配列からの構築。演算子と慣用的な名前は §4.8 に従います。
 
+**ペアヒープは例外です。** `toXArray`、`appendTo`、生成関数、配列からの構築は持ちません。キーと値の組では `toXArray` の形が定まらず、Dijkstra などの用途でも使わないのに、18 クラスと提出コードを増やすためです。
+
 標準コレクションとの変換(`toList()` など、§4.6)にはボクシングが伴うので、`@BoxingApi` を付けて静的検査の例外にします。
 
 ### 5.3 List(`IntList`)
@@ -419,7 +421,12 @@ while (pq.isNotEmpty()) {
 }
 ```
 
-Pair を返せないので `firstKey()` / `firstValue()` に分けます。内部は並列配列または 4 分ヒープとし、実測で決めます。
+Pair を返せないので `firstKey()` / `firstValue()` に分けます。内部は並列配列の 4 分ヒープです。AtCoder のコードテストでは 2 分ヒープとの差を判別できず、切り替える根拠がないので 4 分のままにしました(`docs/judge-env.md` §7)。
+
+- **`Max`:** `Min` と同じテンプレートから、比較の向きだけを変えて生成します。別々に書かないので、片方だけ直し忘れることがありません。
+- **`Double` キー:** `sort` と同じ全順序です。`-0.0` は `0.0` より小さく、`NaN` は最大です。
+- **`Obj` 値(`LongObjMinHeap<V>`):** 値は `Array<Any?>` に持ちます。`removeFirst` と `clear` で参照を消すので、取り除いた値は GC の対象になります。`null` も値として使えます。`equals` は同じキーの値を `==` で突き合わせるので、1 つのキーに n 個の値があると O(n^2) かかります。
+- **`forEachUnordered` の中での変更:** `add`、`removeFirst`、`replaceFirst`、`clear` を行うと `ConcurrentModificationException` になります。§5.6 と同じく、黙って誤答になるより RE で気づける方を選びます。`replaceFirst` は要素数が変わらないので、要素数の比較では検出できず、`modCount` を使います。
 
 **インデックス付きヒープ**: 添字集合 `[0, n)` に対する `set(i, key)`、`decreaseKey`、`increaseKey`、`remove(i)`、`contains(i)`、`keyOf(i)`、`firstIndex()`。
 
@@ -868,7 +875,7 @@ class KTypeList { /* KType を使って実装 */ }
 | バンドラ、公開確認、参照 URL の付与 | 完了 |
 | E2E(貼り付けと jar、Docker)、インストールのリハーサル | 完了 |
 | JMH | 完了(arm64 の値のみ。§7.6 のとおり判断には使わない) |
-| CI の定義 | 作成済み、**未実行**(未 push のため) |
+| CI | 完了(タグと PR #1 で通過) |
 | タグの作成と push | 完了(`v0.1.0`) |
 | AtCoder への実提出と AC | 完了。ABC 231 C を貼り付け形式で提出して AC、509 ms(2026-11-06、未公開状態のコードで、終了済みコンテストへの提出) |
 | コードテストでの `java.util` との比較 | 完了(`docs/judge-env.md` §6) |
@@ -887,9 +894,30 @@ class KTypeList { /* KType を使って実装 */ }
 
 **完了条件**: Dijkstra と argsort の代表問題が AC。`java.util` 比の性能を記録。
 
+**Phase 2 の進捗**
+
+| 項目 | 状態 |
+|---|---|
+| `LongIntMinHeap`(テンプレート `KTypeVTypeMinHeap`、4 分ヒープ) | 完了。全ゲートを通過(分岐カバレッジ 100%、変異テスト 96%)、E2E 通過 |
+| Dijkstra の代表問題 | 完了。ABC 340 D で AC、239 ms(`docs/judge-env.md` §7) |
+| `PriorityQueue` との比較 | 完了。Dijkstra 部分が 2.3 倍速い(`docs/judge-env.md` §7) |
+| タグの作成 | **未実施**。公開タグは `v0.1.0` のままなので、`LongIntMinHeap` はコンテストではまだ使えない |
+| 他の型の組み合わせと `Max` のペアヒープ | 完了。§5.1 の 18 クラスを 1 つのテンプレートから生成し、全ゲートを通過(分岐カバレッジ 100%、変異テスト 91%)、E2E 通過。AtCoder への提出は判断が変わらないので行っていない |
+| 全型の `List` | **未実施**(「Phase 2 に残したもの」も参照)。試しに展開した結果(コミットしていない): Char と Boolean は `K_SUM_TYPE` がなく生成の時点で失敗。Long、Double、Float、Short、Byte は `KTypeListSort` で 1 件ずつコンパイルエラー。コンパイラは早い段階で止まるので、エラーがこれだけとは限らない |
+| `Deque`、単純ヒープ、インデックス付きヒープ、配列拡張 | **未実施** |
+| ソートの実測と採否(§6)、argsort の代表問題 | **未実施** |
+
 ### Phase 3: ハッシュ
 
 `HashSet`、`HashMap`。負荷率、ハッシュ関数、キー管理の実測と決定。
+
+**生成器の準備(最初の `HashMap` のテンプレートより先に行う)**
+
+今の生成器では `KTypeVType*` のテンプレートがすべて同じ組み合わせで展開されるので、`HashMap` に必要なクラスを生成できません。利用者がペアヒープだけの間は作っても確かめられないので、ここで行います。
+
+- `Codegen.GENERATED_PAIRS` をやめ、キーと値の組み合わせをテンプレートごとに持たせる。§5.1 の `HashMap`(`Obj`-`Obj` を除く 24 クラス)と `TreeMap` の組み合わせを表せるようにする
+- 値に `Double` と `Boolean` を、キーに `Obj` を追加する(`VALUE_SPECS` と `TYPE_SPECS`)
+- `CodegenTest` の期待値に各コレクションの組み合わせを加え、§5.1 と一致することを確かめる
 
 **完了条件**: 差分テストと劣化ケースのテストの通過。HPPC / fastutil との比較。
 
@@ -1015,14 +1043,15 @@ AVL / WBT と B+ 木の比較実験(Int キーのみで実装)、方式の決定
 
 | 項目 | 状況 | 確認時期 |
 |---|---|---|
-| コンパイル時間の上限 | 未確認で、最大の未知数。増え方の参考値は `docs/judge-env.md` | Phase 1(`e2e/experiments/size-probe.py` のファイルをコードテストで確認) |
-| ソース長の上限 | 未確認。512 KiB という認識はあるが、確認できたルールには記載なし | Phase 1(同上) |
-| `nextCapacity` の拡張率 | 暫定で 1.5 倍 | Phase 1(`e2e/experiments/GrowthRate.kt` をコードテストで確認) |
-| `java.util` との 1 回実行の比較(S5) | `IntList` は確認済み。10^6 要素で 2.1 倍速い(`docs/judge-env.md` §6)。他のコレクションは各 Phase で確認 | 各 Phase |
+| コンパイル時間の上限 | 未確認で、最大の未知数。増え方の参考値は `docs/judge-env.md` | 未実施。Phase 2 以降(`e2e/experiments/size-probe.py` のファイルをコードテストで確認。手作業なので依頼は最小限にする) |
+| ソース長の上限 | 未確認。512 KiB という認識はあるが、確認できたルールには記載なし | 同上 |
+| `nextCapacity` の拡張率 | 暫定で 1.5 倍 | 未実施。Phase 2 以降(`e2e/experiments/GrowthRate.kt`) |
+| `java.util` との 1 回実行の比較(S5) | `IntList` は 10^6 要素で 2.1 倍速い(`docs/judge-env.md` §6)。`LongIntMinHeap` は実行時間全体で 1.4 倍速い(同 §7)。他のコレクションは各 Phase で確認 | 各 Phase |
 | メモリの目標(`java.util` 比 1/3 以下) | 未確認。プロセス全体では 0.67 倍だが JVM の基礎分を含む | Phase 2 |
 | `add` の n = 10^6 での速度 | `modCount` の有無と関係なく、同じ構造の比較クラスより約 1.5 倍遅い(0.40 と 0.55〜0.68 ops/ms)。原因は未解明。`ArrayList`(0.25)には勝つ | Phase 2 |
 | コードテストと本番のジャッジが同じ構成か | 未確認。コードテストの実測は `docs/judge-env.md` | 確認手段なし |
 | `Arrays.sort` の SIMD 実装が実際に使われているか | 直接は未確認。実機の速度は SIMD の利用と整合する | 確認手段なし |
+| ヒープの `modCount` の速度への影響 | AtCoder では未計測。ローカル(arm64)の Dijkstra では差が見えなかった(`docs/judge-env.md` §7)。AtCoder の §7 の値は `modCount` を入れる前のもの | 次にヒープを AtCoder で測るとき |
 | §5〜§7 の性能に関する見込みと目標値 | 仮説。実測後に確定 | 各 Phase。B+ 木の速度差は Phase 4 |
 
 ---

@@ -14,6 +14,13 @@ internal const val MAX_ARRAY_SIZE: Int = Int.MAX_VALUE - 8
 internal const val DEFAULT_CAPACITY: Int = 8
 
 /**
+ * Heaps are 4-ary, because measurements could not tell it from 2-ary, so nothing justified a change.
+ * See docs/judge-env.md, section 7. These live here because a companion object in each heap would add a class to load.
+ */
+internal const val HEAP_ARITY_SHIFT: Int = 2
+internal const val HEAP_ARITY: Int = 1 shl HEAP_ARITY_SHIFT
+
+/**
  * Returns the next array size that holds [required] elements.
  *
  * The growth factor is provisional until it is measured on the judge. See docs/PLAN.md, section 7.6.

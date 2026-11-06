@@ -112,7 +112,7 @@ pitest {
     excludedMethods = setOf(
         "all", "any", "count", "none", "filter", "map", "fold", "sumOf", "removeIf",
         "forEach", "forEachIndexed", "forEachReversed", "indexOfFirst", "indexOfLast",
-        "firstOrElse", "lastOrElse", "sortBy", "argsortBy", "IntList", "buildIntList",
+        "firstOrElse", "lastOrElse", "sortBy", "argsortBy", "IntList", "buildIntList", "forEachUnordered",
     )
     threads = Runtime.getRuntime().availableProcessors()
     outputFormats = setOf("HTML", "XML")
