@@ -8,11 +8,13 @@ object Codegen {
     /** Phase 1 runs the whole pipeline on Int only. See docs/PLAN.md, section 11. */
     val GENERATED_TYPES = listOf("Int")
 
-    /** Key and value types of pair templates, from docs/PLAN.md section 5.1. Phase 2 starts with Dijkstra's pair. */
-    val GENERATED_PAIRS = listOf("Long" to "Int")
+    /** Key and value types of pair templates, from docs/PLAN.md section 5.1. */
+    val GENERATED_PAIRS = listOf("Int", "Long", "Double").flatMap { key -> listOf("Int", "Long", "Obj").map { key to it } }
 
     private const val TEMPLATE_PREFIX = "KType"
     private const val PAIR_TEMPLATE_PREFIX = "KTypeVType"
+    private const val MIN_HEAP = "MinHeap"
+    private const val MAX_HEAP = "MaxHeap"
     // REUSE-IgnoreStart
     private const val SPDX = "// SPDX-License-Identifier: CC0-1.0\n"
     // REUSE-IgnoreEnd
@@ -33,17 +35,24 @@ object Codegen {
             require(text.startsWith(SPDX)) { "${template.name} must start with the SPDX line" }
             val body = text.removePrefix(SPDX)
             val label = "${templateDir.name}/${template.name}"
-            if (template.name.startsWith(PAIR_TEMPLATE_PREFIX)) {
-                for ((key, value) in GENERATED_PAIRS) {
-                    val name = template.name.replace(PAIR_TEMPLATE_PREFIX, key + value)
-                    result["ac_primitive_collections/$name"] = header(label) + TemplateEngine.expand(body, TYPE_SPECS.getValue(key), value)
+            // A heap template holds both directions, so that Max cannot drift from Min.
+            val directions = if (MIN_HEAP in template.name) listOf(false, true) else listOf(false)
+            for (maxHeap in directions) {
+                val fileName = if (maxHeap) template.name.replace(MIN_HEAP, MAX_HEAP) else template.name
+                if (template.name.startsWith(PAIR_TEMPLATE_PREFIX)) {
+                    val values = if (template.name.endsWith("Test.kt")) TEST_VALUE_SPECS else VALUE_SPECS
+                    for ((key, value) in GENERATED_PAIRS) {
+                        val name = fileName.replace(PAIR_TEMPLATE_PREFIX, key + value)
+                        result["ac_primitive_collections/$name"] = header(label) +
+                            TemplateEngine.expand(body, TYPE_SPECS.getValue(key), values.getValue(value), maxHeap)
+                    }
+                    continue
                 }
-                continue
-            }
-            for (typeName in types) {
-                val spec = TYPE_SPECS.getValue(typeName)
-                val name = template.name.replace(TEMPLATE_PREFIX, spec.name)
-                result["ac_primitive_collections/$name"] = header(label) + TemplateEngine.expand(body, spec)
+                for (typeName in types) {
+                    val spec = TYPE_SPECS.getValue(typeName)
+                    val name = fileName.replace(TEMPLATE_PREFIX, spec.name)
+                    result["ac_primitive_collections/$name"] = header(label) + TemplateEngine.expand(body, spec, maxHeap = maxHeap)
+                }
             }
         }
         return result

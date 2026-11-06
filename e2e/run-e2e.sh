@@ -56,7 +56,7 @@ for sample in "$root"/e2e/usage/*/; do
       fi"
     # The paste form holds library code in MainKt, so the library rules apply; the jar form has only user code.
     if [ "$form" = paste ]; then mode=--library; else mode=--strict; fi
-    if ! "$checker" "$mode" --class-prefix MainKt --class-prefix Int "$dir/Main.jar" >"$dir/boxing.log"; then
+    if ! "$checker" "$mode" --class-prefix MainKt --class-prefix Int --class-prefix Long --class-prefix Double "$dir/Main.jar" >"$dir/boxing.log"; then
       echo "FAIL $name/$form: boxing"; cat "$dir/boxing.log"; failures=$((failures + 1))
     fi
     echo "$name/$form: compile $(cat "$dir/compile-time.txt")s, source $(wc -c <"$dir/Main.kt" | tr -d ' ') bytes"

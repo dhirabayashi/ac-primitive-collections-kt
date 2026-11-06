@@ -2,13 +2,24 @@
 package ac_primitive_collections
 
 /**
- * A priority queue of (key, value) pairs with the smallest key first, without boxing or `Pair`.
+ * A priority queue of (key, value) pairs without `Pair`, or boxing of the key.
+//#if K_MAX_HEAP
+ * The largest key comes first.
  *
- * Replaces `PriorityQueue<Pair<KType, VType>>`. The order among equal keys is unspecified.
+ * Replaces `PriorityQueue<Pair<KType, VType>>` with a reversed comparator.
+//#else
+ * The smallest key comes first.
+ *
+ * Replaces `PriorityQueue<Pair<KType, VType>>`.
+//#endif
+//#if K_FLOATING
+ * Keys follow the total order of `compareTo`, the same as `sort`: `-0.0` is below `0.0`, and `NaN` is above everything.
+//#endif
+ * The order among equal keys is unspecified.
  *
  * ```
- * val queue = KTypeVTypeMinHeap()
- * queue.add(0, start)
+ * val queue = KTypeVTypeMinHeap/*<V>*/()
+ * queue.add(K_ZERO, start)
  * while (queue.isNotEmpty()) {
  *     val distance = queue.firstKey()
  *     val vertex = queue.firstValue()
@@ -16,14 +27,15 @@ package ac_primitive_collections
  * }
  * ```
  */
-class KTypeVTypeMinHeap private constructor(
+@Suppress("UNCHECKED_CAST")
+class KTypeVTypeMinHeap/*<V>*/ private constructor(
     private var keys: KTypeArray,
     private var values: VTypeArray,
     private var length: Int,
 ) {
     constructor(initialCapacity: Int = DEFAULT_CAPACITY) : this(
         KTypeArray(checkInitialCapacity(initialCapacity)),
-        VTypeArray(initialCapacity),
+        V_NEW_ARRAY(initialCapacity),
         0,
     )
 
@@ -40,7 +52,7 @@ class KTypeVTypeMinHeap private constructor(
 
     fun firstValue(): VType {
         if (length == 0) throwEmpty()
-        return values[0]
+        return V_CAST(values[0])
     }
 
     fun add(key: KType, value: VType) {
@@ -54,6 +66,9 @@ class KTypeVTypeMinHeap private constructor(
         if (length == 0) throwEmpty()
         val last = --length
         if (last > 0) siftDown(keys[last], values[last])
+        //#if V_OBJ
+        values[last] = V_NULL
+        //#endif
     }
 
     /** Does the work of `removeFirst` and `add` with one sift. */
@@ -63,6 +78,9 @@ class KTypeVTypeMinHeap private constructor(
     }
 
     fun clear() {
+        //#if V_OBJ
+        values.fill(V_NULL, 0, length)
+        //#endif
         length = 0
     }
 
@@ -70,7 +88,7 @@ class KTypeVTypeMinHeap private constructor(
         if (minCapacity > keys.size) grow(minCapacity.toLong())
     }
 
-    fun copy(): KTypeVTypeMinHeap = KTypeVTypeMinHeap(keys.copyOf(), values.copyOf(), length)
+    fun copy(): KTypeVTypeMinHeap/*<V>*/ = KTypeVTypeMinHeap(keys.copyOf(), values.copyOf(), length)
 
     /** Visits every pair in no particular order. */
     inline fun forEachUnordered(action: (key: KType, value: VType) -> Unit) {
@@ -85,16 +103,16 @@ class KTypeVTypeMinHeap private constructor(
     internal fun keyAt(index: Int): KType = keys[index]
 
     @PublishedApi
-    internal fun valueAt(index: Int): VType = values[index]
+    internal fun valueAt(index: Int): VType = V_CAST(values[index])
 
     /** Moves a hole at [start] toward the root, then fills it. */
-    private fun siftUp(start: Int, key: KType, value: VType) {
+    private fun siftUp(start: Int, key: KType, value: VStored) {
         val k = keys
         val v = values
         var hole = start
         while (hole > 0) {
             val parent = (hole - 1) ushr ARITY_SHIFT
-            if (!K_LT(key, k[parent])) break
+            if (!K_BEFORE(key, k[parent])) break
             k[hole] = k[parent]
             v[hole] = v[parent]
             hole = parent
@@ -104,7 +122,7 @@ class KTypeVTypeMinHeap private constructor(
     }
 
     /** Moves a hole at the root toward the leaves, then fills it. */
-    private fun siftDown(key: KType, value: VType) {
+    private fun siftDown(key: KType, value: VStored) {
         val k = keys
         val v = values
         val n = length
@@ -117,10 +135,10 @@ class KTypeVTypeMinHeap private constructor(
             var best = firstChild
             var child = firstChild + 1
             while (child < endChild) {
-                if (K_LT(k[child], k[best])) best = child
+                if (K_BEFORE(k[child], k[best])) best = child
                 child++
             }
-            if (!K_LT(k[best], key)) break
+            if (!K_BEFORE(k[best], key)) break
             k[hole] = k[best]
             v[hole] = v[best]
             hole = best
@@ -150,13 +168,13 @@ class KTypeVTypeMinHeap private constructor(
     /** Two heaps are equal if they hold the same pairs, whatever their internal layout. O(n log n). */
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
-        if (other !is KTypeVTypeMinHeap || length != other.length) return false
+        if (other !is KTypeVTypeMinHeap/*<*>*/ || length != other.length) return false
         val mine = copy()
         val theirs = other.copy()
-        val myRun = VTypeArray(length)
-        val theirRun = VTypeArray(length)
+        val myRun = V_NEW_ARRAY(length)
+        val theirRun = V_NEW_ARRAY(length)
         while (mine.length > 0) {
-            // Values under equal keys come out in an arbitrary order, so compare each run sorted.
+            // Values under equal keys come out in an arbitrary order, so compare each run as a multiset.
             val key = mine.firstKey()
             var run = 0
             while (mine.length > 0 && K_EQ(mine.firstKey(), key)) {
@@ -168,11 +186,31 @@ class KTypeVTypeMinHeap private constructor(
                 mine.removeFirst()
                 theirs.removeFirst()
             }
-            java.util.Arrays.sort(myRun, 0, run)
-            java.util.Arrays.sort(theirRun, 0, run)
-            if (!java.util.Arrays.equals(myRun, 0, run, theirRun, 0, run)) return false
+            if (!sameValues(myRun, theirRun, run)) return false
         }
         return true
+    }
+
+    /** Compares the first [n] items of both arrays in any order. May reorder them. */
+    private fun sameValues(mine: VTypeArray, theirs: VTypeArray, n: Int): Boolean {
+        //#if V_OBJ
+        // Values need not be comparable, so this takes O(n^2) for n values under one key.
+        var remaining = n
+        var i = 0
+        while (i < n) {
+            var j = 0
+            while (j < remaining && mine[i] != theirs[j]) j++
+            if (j == remaining) return false
+            remaining--
+            theirs[j] = theirs[remaining]
+            i++
+        }
+        return true
+        //#else
+        java.util.Arrays.sort(mine, 0, n)
+        java.util.Arrays.sort(theirs, 0, n)
+        return java.util.Arrays.equals(mine, 0, n, theirs, 0, n)
+        //#endif
     }
 
     /** Independent of the internal layout, to match [equals]. */

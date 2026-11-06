@@ -5,13 +5,15 @@
 package ac_primitive_collections
 
 /**
- * A priority queue of (key, value) pairs with the smallest key first, without boxing or `Pair`.
+ * A priority queue of (key, value) pairs without `Pair`, or boxing of the key.
+ * The smallest key comes first.
  *
- * Replaces `PriorityQueue<Pair<Long, Int>>`. The order among equal keys is unspecified.
+ * Replaces `PriorityQueue<Pair<Long, Int>>`.
+ * The order among equal keys is unspecified.
  *
  * ```
  * val queue = LongIntMinHeap()
- * queue.add(0, start)
+ * queue.add(0L, start)
  * while (queue.isNotEmpty()) {
  *     val distance = queue.firstKey()
  *     val vertex = queue.firstValue()
@@ -19,6 +21,7 @@ package ac_primitive_collections
  * }
  * ```
  */
+@Suppress("UNCHECKED_CAST")
 class LongIntMinHeap private constructor(
     private var keys: LongArray,
     private var values: IntArray,
@@ -159,7 +162,7 @@ class LongIntMinHeap private constructor(
         val myRun = IntArray(length)
         val theirRun = IntArray(length)
         while (mine.length > 0) {
-            // Values under equal keys come out in an arbitrary order, so compare each run sorted.
+            // Values under equal keys come out in an arbitrary order, so compare each run as a multiset.
             val key = mine.firstKey()
             var run = 0
             while (mine.length > 0 && (mine.firstKey() == key)) {
@@ -171,11 +174,16 @@ class LongIntMinHeap private constructor(
                 mine.removeFirst()
                 theirs.removeFirst()
             }
-            java.util.Arrays.sort(myRun, 0, run)
-            java.util.Arrays.sort(theirRun, 0, run)
-            if (!java.util.Arrays.equals(myRun, 0, run, theirRun, 0, run)) return false
+            if (!sameValues(myRun, theirRun, run)) return false
         }
         return true
+    }
+
+    /** Compares the first [n] items of both arrays in any order. May reorder them. */
+    private fun sameValues(mine: IntArray, theirs: IntArray, n: Int): Boolean {
+        java.util.Arrays.sort(mine, 0, n)
+        java.util.Arrays.sort(theirs, 0, n)
+        return java.util.Arrays.equals(mine, 0, n, theirs, 0, n)
     }
 
     /** Independent of the internal layout, to match [equals]. */

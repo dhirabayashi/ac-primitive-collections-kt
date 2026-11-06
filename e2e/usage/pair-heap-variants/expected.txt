@@ -1,0 +1,9 @@
+IntIntMaxHeap 3=30 2=20 1=10
+IntLongMinHeap 4=4000000000
+DoubleIntMinHeap -Infinity -0.0 0.0 NaN
+DoubleLongMaxHeap 2.5=25
+LongObjMinHeap 2=b 3 111
+true
+[]
+3
+DoubleObjMaxHeap 2.0=9

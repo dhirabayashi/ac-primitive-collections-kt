@@ -32,13 +32,13 @@ class LongIntMinHeapTest {
         }
     }
 
-    /** The model is a plain list. Its minimum key is the expected first key, and the first pair must be in it. */
+    /** The model is a plain list. The key that sorts first is the expected first key, and the first pair must be in it. */
     private fun check(ops: List<Op>) {
         var heap = LongIntMinHeap()
         val model = ArrayList<Pair<Long, Int>>()
+        fun expectedFirstKey() = model.minWith(compareBy(ORDER) { it.first }).first
         fun removeFirstFromModel(): Pair<Long, Int> {
-            val minimum = model.minOf { it.first }
-            assertEquals(minimum, heap.firstKey())
+            assertEquals(expectedFirstKey(), heap.firstKey())
             val first = heap.firstKey() to heap.firstValue()
             assertTrue(model.remove(first), "$first is not in the model")
             return first
@@ -70,7 +70,7 @@ class LongIntMinHeapTest {
             }
             assertEquals(model.size, heap.size)
             assertEquals(model.isEmpty(), heap.isEmpty())
-            if (model.isNotEmpty()) assertEquals(model.minOf { it.first }, heap.firstKey())
+            if (model.isNotEmpty()) assertEquals(expectedFirstKey(), heap.firstKey())
         }
         val rest = ArrayList<Pair<Long, Int>>()
         heap.forEachUnordered { k, v -> rest += k to v }
@@ -100,9 +100,9 @@ class LongIntMinHeapTest {
         val base = IntList(7) { it }
         do {
             val heap = LongIntMinHeap()
-            base.forEach { heap.add(it.toLong(), (it * 2).toInt()) }
+            base.forEach { heap.add(rank(it), (it * 2).toInt()) }
             for (expected in 0 until 7) {
-                assertEquals(expected.toLong(), heap.firstKey())
+                assertEquals(rank(expected), heap.firstKey())
                 assertEquals((expected * 2).toInt(), heap.firstValue())
                 heap.removeFirst()
             }
@@ -125,17 +125,20 @@ class LongIntMinHeapTest {
                 out += k
                 heap.removeFirst()
             }
-            assertEquals(keys.sorted(), out)
+            assertEquals(keys.sortedWith(ORDER), out)
         }
     }
 
     @Test
     fun boundaryKeysOrderCorrectly() {
-        val heap = LongIntMinHeap()
-        BOUNDARY_KEYS.reversed().forEachIndexed { i, k -> heap.add(k, i.toInt()) }
-        for (expected in BOUNDARY_KEYS) {
-            assertEquals(expected, heap.firstKey())
-            heap.removeFirst()
+        for (input in listOf(BOUNDARY_KEYS, BOUNDARY_KEYS.reversed(), BOUNDARY_KEYS.shuffled(Random(1)))) {
+            val heap = LongIntMinHeap()
+            input.forEachIndexed { i, k -> heap.add(k, i.toInt()) }
+            for (expected in BOUNDARY_KEYS_IN_HEAP_ORDER) {
+                assertEquals(expected, heap.firstKey())
+                heap.removeFirst()
+            }
+            assertTrue(heap.isEmpty())
         }
     }
 
@@ -152,27 +155,27 @@ class LongIntMinHeapTest {
     @Test
     fun replaceFirstKeepsTheOrder() {
         val heap = LongIntMinHeap()
-        heap.add(1.toLong(), 1.toInt())
-        heap.add(2.toLong(), 2.toInt())
-        heap.add(3.toLong(), 3.toInt())
-        heap.replaceFirst(5.toLong(), 5.toInt())
-        assertEquals(2.toLong(), heap.firstKey())
+        heap.add(rank(1), 1.toInt())
+        heap.add(rank(2), 2.toInt())
+        heap.add(rank(3), 3.toInt())
+        heap.replaceFirst(rank(5), 5.toInt())
+        assertEquals(rank(2), heap.firstKey())
         assertEquals(3, heap.size)
-        heap.replaceFirst(0.toLong(), 0.toInt())
-        assertEquals(0.toLong(), heap.firstKey())
+        heap.replaceFirst(rank(0), 0.toInt())
+        assertEquals(rank(0), heap.firstKey())
         assertEquals(0.toInt(), heap.firstValue())
     }
 
     @Test
     fun removingTheOnlyElementLeavesItEmpty() {
         val heap = LongIntMinHeap()
-        heap.add(1.toLong(), 1.toInt())
+        heap.add(rank(1), 1.toInt())
         heap.removeFirst()
         assertTrue(heap.isEmpty())
         assertFalse(heap.isNotEmpty())
-        heap.add(2.toLong(), 2.toInt())
+        heap.add(rank(2), 2.toInt())
         assertTrue(heap.isNotEmpty())
-        assertEquals(2.toLong(), heap.firstKey())
+        assertEquals(rank(2), heap.firstKey())
     }
 
     @Test
@@ -184,7 +187,7 @@ class LongIntMinHeapTest {
         assertEquals(2, heap.capacity)
         heap.ensureCapacity(50)
         assertEquals(50, heap.capacity)
-        heap.add(1.toLong(), 1.toInt())
+        heap.add(rank(1), 1.toInt())
         heap.clear()
         assertEquals(0, heap.size)
         assertEquals(50, heap.capacity)
@@ -194,26 +197,26 @@ class LongIntMinHeapTest {
     @Test
     fun copyIsIndependent() {
         val heap = LongIntMinHeap()
-        heap.add(1.toLong(), 1.toInt())
+        heap.add(rank(1), 1.toInt())
         val copy = heap.copy()
-        copy.add(0.toLong(), 0.toInt())
-        copy.replaceFirst(9.toLong(), 9.toInt())
+        copy.add(rank(0), 0.toInt())
+        copy.replaceFirst(rank(9), 9.toInt())
         assertEquals(1, heap.size)
-        assertEquals(1.toLong(), heap.firstKey())
+        assertEquals(rank(1), heap.firstKey())
         assertEquals(1.toInt(), heap.firstValue())
     }
 
     @Test
     fun text() {
         val heap = LongIntMinHeap()
-        heap.add(1.toLong(), 2.toInt())
-        heap.add(3.toLong(), 4.toInt())
-        assertEquals("[1=2, 3=4]", heap.toString())
+        heap.add(rank(1), 2.toInt())
+        heap.add(rank(3), 4.toInt())
+        assertEquals("[${rank(1)}=${2.toInt()}, ${rank(3)}=${4.toInt()}]", heap.toString())
     }
 
     private fun heapOf(vararg pairs: Pair<Int, Int>): LongIntMinHeap {
         val heap = LongIntMinHeap()
-        pairs.forEach { (k, v) -> heap.add(k.toLong(), v.toInt()) }
+        pairs.forEach { (k, v) -> heap.add(rank(k), v.toInt()) }
         return heap
     }
 
@@ -245,7 +248,7 @@ class LongIntMinHeapTest {
     fun hashCodeFollowsTheFormulaAndIgnoresStaleSlots() {
         val heap = heapOf(1 to 2, 3 to 4, 5 to 6)
         heap.removeFirst()
-        val expected = 2 + (31 * 3.toLong().hashCode() + 4.toInt().hashCode()) + (31 * 5.toLong().hashCode() + 6.toInt().hashCode())
+        val expected = 2 + (31 * rank(3).hashCode() + 4.toInt().hashCode()) + (31 * rank(5).hashCode() + 6.toInt().hashCode())
         assertEquals(expected, heap.hashCode())
         assertEquals(heapOf(3 to 4, 5 to 6).hashCode(), heap.hashCode())
     }
@@ -259,7 +262,18 @@ class LongIntMinHeapTest {
         assertEquals(2, b.size)
     }
 
+
+
+    private fun rank(position: Int): Long {
+        return position.toLong()
+    }
+
     private companion object {
+        val ORDER: Comparator<Long> = naturalOrder()
+
+        // Written in ascending order by hand, so that the expectation does not come from a comparison under test.
         val BOUNDARY_KEYS = listOf(Long.MIN_VALUE, (-1).toLong(), 0L, 1.toLong(), Long.MAX_VALUE)
+
+        val BOUNDARY_KEYS_IN_HEAP_ORDER = BOUNDARY_KEYS
     }
 }

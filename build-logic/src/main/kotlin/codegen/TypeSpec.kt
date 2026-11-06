@@ -59,4 +59,48 @@ val TYPE_SPECS: Map<String, TypeSpec> = listOf(
     TypeSpec("Boolean", "false", setOf("K_BOOLEAN"), comparableOperators),
 ).associateBy { it.name }
 
-val KNOWN_FLAGS: Set<String> = TYPE_SPECS.values.flatMapTo(sortedSetOf()) { it.flags }
+/** How the value side of a pair template fills in. [tokens] apply in order. */
+data class ValueSpec(
+    val name: String,
+    val flags: Set<String>,
+    val macros: Map<String, String>,
+    val tokens: List<Pair<String, String>>,
+) {
+    val isGeneric: Boolean get() = name == OBJ
+}
+
+private const val OBJ = "Obj"
+
+private fun primitiveValue(name: String) = ValueSpec(
+    name,
+    emptySet(),
+    mapOf("V_NEW_ARRAY" to "${name}Array(\$0)", "V_CAST" to "\$0"),
+    listOf("KTypeVType" to "KType$name", "VTypeArray" to "${name}Array", "VStored" to name, "VType" to name),
+)
+
+private val objValue = ValueSpec(
+    OBJ,
+    setOf("V_OBJ"),
+    mapOf("V_NEW_ARRAY" to "arrayOfNulls<Any?>(\$0)", "V_CAST" to "(\$0 as V)", "V_NULL" to "null"),
+    listOf("KTypeVType" to "KType$OBJ", "VTypeArray" to "Array<Any?>", "VStored" to "Any?", "VType" to "V"),
+)
+
+/** Values that docs/PLAN.md section 5.1 plans for pair heaps. */
+val VALUE_SPECS: Map<String, ValueSpec> = listOf(primitiveValue("Int"), primitiveValue("Long"), objValue).associateBy { it.name }
+
+/** The same, for test templates: an Obj heap is tested with `V = Int` so that the test bodies stay shared. */
+val TEST_VALUE_SPECS: Map<String, ValueSpec> = VALUE_SPECS + (
+    OBJ to objValue.copy(
+        tokens = listOf(
+            "KTypeVTypeMinHeapTest" to "KType${OBJ}MinHeapTest",
+            "KTypeVTypeMinHeap" to "KType${OBJ}MinHeap<Int>",
+            "VType" to "Int",
+        ),
+    )
+)
+
+/** Flags that come from the generator's choices rather than from a key type. */
+const val MAX_HEAP_FLAG = "K_MAX_HEAP"
+
+val KNOWN_FLAGS: Set<String> = TYPE_SPECS.values.flatMapTo(sortedSetOf()) { it.flags } +
+    VALUE_SPECS.values.flatMap { it.flags } + MAX_HEAP_FLAG

@@ -21,8 +21,65 @@ class TemplateEngineTest {
     fun fillsKeyAndValueTypes() {
         assertEquals(
             "class LongIntMinHeap { val k: LongArray; val v: IntArray }",
-            TemplateEngine.expand("class KTypeVTypeMinHeap { val k: KTypeArray; val v: VTypeArray }", TYPE_SPECS.getValue("Long"), "Int"),
+            TemplateEngine.expand("class KTypeVTypeMinHeap { val k: KTypeArray; val v: VTypeArray }", TYPE_SPECS.getValue("Long"), VALUE_SPECS.getValue("Int")),
         )
+    }
+
+    @Test
+    fun genericValuesGetTypeParametersAndAnErasedStore() {
+        assertEquals(
+            "class DoubleObjMinHeap<V>(val v: Array<Any?>, x: Any?) { fun f(): V = (v[0] as V); fun g(): DoubleObjMinHeap<V>; val n = arrayOfNulls<Any?>(1) }",
+            TemplateEngine.expand(
+                "class KTypeVTypeMinHeap/*<V>*/(val v: VTypeArray, x: VStored) { fun f(): VType = V_CAST(v[0]); fun g(): KTypeVTypeMinHeap/*<V>*/; val n = V_NEW_ARRAY(1) }",
+                double,
+                VALUE_SPECS.getValue("Obj"),
+            ),
+        )
+    }
+
+    @Test
+    fun primitiveValuesDropTheCommentedTypeArguments() {
+        assertEquals(
+            "class IntLongMinHeap(x: Long) { val a = LongArray(1); fun f() = a[0]; fun g(o: Any?) = o is IntLongMinHeap }",
+            TemplateEngine.expand(
+                "class KTypeVTypeMinHeap/*<V>*/(x: VStored) { val a = V_NEW_ARRAY(1); fun f() = V_CAST(a[0]); fun g(o: Any?) = o is KTypeVTypeMinHeap/*<*>*/ }",
+                int,
+                VALUE_SPECS.getValue("Long"),
+            ),
+        )
+    }
+
+    @Test
+    fun testTemplatesUseAConcreteTypeForGenericValues() {
+        assertEquals(
+            "class LongObjMinHeapTest { val h = LongObjMinHeap<Int>(); val v: Int = 1.toInt() }",
+            TemplateEngine.expand(
+                "class KTypeVTypeMinHeapTest { val h = KTypeVTypeMinHeap(); val v: VType = 1.toVType() }",
+                TYPE_SPECS.getValue("Long"),
+                TEST_VALUE_SPECS.getValue("Obj"),
+            ),
+        )
+    }
+
+    @Test
+    fun maxHeapsSwapTheOrderAndTheName() {
+        assertEquals("class IntMaxHeap { val b = (y < x) }", TemplateEngine.expand("class KTypeMinHeap { val b = K_BEFORE(x, y) }", int, maxHeap = true))
+        assertEquals("class IntMinHeap { val b = (x < y) }", TemplateEngine.expand("class KTypeMinHeap { val b = K_BEFORE(x, y) }", int))
+        assertEquals("(y.compareTo(x) < 0)", TemplateEngine.expand("K_BEFORE(x, y)", double, maxHeap = true))
+    }
+
+    @Test
+    fun maxHeapFlagSelectsItsBranch() {
+        val template = "//#if K_MAX_HEAP\nlargest\n//#else\nsmallest\n//#endif"
+        assertEquals("largest", TemplateEngine.expand(template, int, maxHeap = true))
+        assertEquals("smallest", TemplateEngine.expand(template, int))
+    }
+
+    @Test
+    fun objFlagSelectsItsBranch() {
+        val template = "//#if V_OBJ\nerased\n//#else\nprimitive\n//#endif"
+        assertEquals("erased", TemplateEngine.expand(template, int, VALUE_SPECS.getValue("Obj")))
+        assertEquals("primitive", TemplateEngine.expand(template, int, VALUE_SPECS.getValue("Int")))
     }
 
     @Test

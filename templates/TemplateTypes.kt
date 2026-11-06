@@ -11,11 +11,16 @@ typealias KTypeRange = IntRange
 typealias K_SUM_TYPE = Long
 typealias VType = Int
 typealias VTypeArray = IntArray
+typealias VStored = Int
 
 const val K_ZERO: KType = 0
 const val K_SUM_ZERO: K_SUM_TYPE = 0L
+const val V_NULL: VStored = 0
 
 inline fun K_EQ(a: KType, b: KType): Boolean = a == b
 inline fun K_LT(a: KType, b: KType): Boolean = a < b
+inline fun K_BEFORE(a: KType, b: KType): Boolean = a < b
+inline fun V_NEW_ARRAY(size: Int): VTypeArray = VTypeArray(size)
+inline fun V_CAST(x: VStored): VType = x
 inline fun K_HASH(x: KType): Int = x.hashCode()
 inline fun K_TO_SUM(x: KType): K_SUM_TYPE = x.toLong()

@@ -421,6 +421,10 @@ while (pq.isNotEmpty()) {
 
 Pair を返せないので `firstKey()` / `firstValue()` に分けます。内部は並列配列の 4 分ヒープです。AtCoder のコードテストでは 2 分ヒープとの差を判別できず、切り替える根拠がないので 4 分のままにしました(`docs/judge-env.md` §7)。
 
+- **`Max`:** `Min` と同じテンプレートから、比較の向きだけを変えて生成します。別々に書かないので、片方だけ直し忘れることがありません。
+- **`Double` キー:** `sort` と同じ全順序です。`-0.0` は `0.0` より小さく、`NaN` は最大です。
+- **`Obj` 値(`LongObjMinHeap<V>`):** 値は `Array<Any?>` に持ちます。`removeFirst` と `clear` で参照を消すので、取り除いた値は GC の対象になります。`null` も値として使えます。`equals` は同じキーの値を `==` で突き合わせるので、1 つのキーに n 個の値があると O(n^2) かかります。
+
 **インデックス付きヒープ**: 添字集合 `[0, n)` に対する `set(i, key)`、`decreaseKey`、`increaseKey`、`remove(i)`、`contains(i)`、`keyOf(i)`、`firstIndex()`。
 
 **比較関数付きヒープ**: `IntComparator` を受け取る別クラスにし、Min / Max の高速経路に影響を与えません。
@@ -895,8 +899,8 @@ class KTypeList { /* KType を使って実装 */ }
 | Dijkstra の代表問題 | 完了。ABC 340 D で AC、239 ms(`docs/judge-env.md` §7) |
 | `PriorityQueue` との比較 | 完了。Dijkstra 部分が 2.3 倍速い(`docs/judge-env.md` §7) |
 | タグの作成 | **未実施**。公開タグは `v0.1.0` のままなので、`LongIntMinHeap` はコンテストではまだ使えない |
-| 他の型の組み合わせと `Max` のペアヒープ | **未実施**。生成はまだ Long-Int の `Min` だけ |
-| 全型の `List` | **未実施**。Int 以外の展開は未コンパイル(「Phase 2 に残したもの」も参照) |
+| 他の型の組み合わせと `Max` のペアヒープ | 完了。§5.1 の 18 クラスを 1 つのテンプレートから生成し、全ゲートを通過(分岐カバレッジ 100%、変異テスト 94%)、E2E 通過。AtCoder への提出は判断が変わらないので行っていない |
+| 全型の `List` | **未実施**(「Phase 2 に残したもの」も参照)。試しに展開した結果(コミットしていない): Char と Boolean は `K_SUM_TYPE` がなく生成の時点で失敗。Long、Double、Float、Short、Byte は `KTypeListSort` で 1 件ずつコンパイルエラー。コンパイラは早い段階で止まるので、エラーがこれだけとは限らない |
 | `Deque`、単純ヒープ、インデックス付きヒープ、配列拡張 | **未実施** |
 | ソートの実測と採否(§6)、argsort の代表問題 | **未実施** |
 

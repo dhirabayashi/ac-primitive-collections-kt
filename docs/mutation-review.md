@@ -2,15 +2,17 @@
 
 `./gradlew pitest` で生存した変異を 1 件ずつ確認した記録です(§7.1)。
 
-## 結果(`IntList`、`IntSubList`、`LongIntMinHeap`)
+## 結果(`IntList`、`IntSubList`、ペアヒープ 18 クラス)
 
 | 状態 | 件数 |
 |---|---|
-| KILLED | 596 |
-| TIMED_OUT(検出扱い) | 18 |
+| KILLED | 1852 |
+| TIMED_OUT(検出扱い) | 86 |
 | MEMORY_ERROR(検出扱い) | 2 |
-| SURVIVED | 27 |
-| スコア | 96%(基準 90%) |
+| SURVIVED | 129 |
+| スコア | 94%(基準 90%) |
+
+スコアが下がったのは、同じ等価変異がペアヒープのクラスの数だけ数えられるためです。ペアヒープの生存変異は 18 クラスとも同じ 6 件で、キーの型、値の型、向きによる違いはありません(`mutations.xml` を集計して確認)。`IntList` など残りの 21 件は変わりません。
 
 ## PIT の対象外
 
@@ -19,7 +21,7 @@
 
 ## 生存した変異(すべて等価、または性能のみに影響)
 
-行番号は `generated/main/kotlin/ac_primitive_collections/` のものです。
+行番号は `generated/main/kotlin/ac_primitive_collections/` のものです。ペアヒープは 18 クラスに共通なので、`KTypeVTypeMinHeap` として書きます。
 
 | 箇所 | 変異 | 判定の理由 |
 |---|---|---|
@@ -35,7 +37,7 @@
 | `IntListSort.kt` `mergeSortInt` 70 | 作業領域の計算の境界 | 作業領域が大きくなるだけ |
 | `IntListSort.kt` `mergeSortInt` 82 | 打ち切りの境界 | 何もしないパスが 1 回増えるだけ |
 | `IntListSort.kt` `mergeInt` 102 | `<= 0` を `< 0` に(マージ省略の判定) | 省略しなくても安定マージの結果は同じ |
-| `LongIntMinHeap.kt` `add` | `n + 1L` を `n - 1L` に | `IntList.add` と同じ理由で結果が同じ |
-| `LongIntMinHeap.kt` `removeFirst` | `last > 0` を `>= 0` に | 空になるときの `siftDown` は、先頭に自分自身を書き戻すだけ |
-| `LongIntMinHeap.kt` `siftUp`、`siftDown` の比較 | `<` を `<=` に | 等しいキーの間の順序だけが変わる。この順序は不定と定めている |
-| `LongIntMinHeap.kt` `siftDown` の子の範囲 | `>` を `>=` に | ちょうど 4 個のときはどちらの式も同じ値になる |
+| `KTypeVTypeMinHeap` `add` | `n + 1L` を `n - 1L` に | `IntList.add` と同じ理由で結果が同じ |
+| `KTypeVTypeMinHeap` `removeFirst` | `last > 0` を `>= 0` に | 空になるときの `siftDown` は、先頭に自分自身を書き戻すだけ。`Obj` ではその後に同じ位置を `null` にする |
+| `KTypeVTypeMinHeap` `siftUp`、`siftDown` の比較 | `<` を `<=` に | 等しいキーの間の順序だけが変わる。この順序は不定と定めている。`Double` の等しさは全順序で判定する |
+| `KTypeVTypeMinHeap` `siftDown` の子の範囲 | `>` を `>=` に | ちょうど 4 個のときはどちらの式も同じ値になる |

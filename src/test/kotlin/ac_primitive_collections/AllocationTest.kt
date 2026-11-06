@@ -86,6 +86,30 @@ class AllocationTest {
     }
 
     @Test
+    fun doubleKeyedMaxHeapWithinCapacity() {
+        val heap = DoubleLongMaxHeap(200)
+        assertReachesZeroAllocation("double max heap") {
+            for (i in 0 until 100) heap.add((i * 7919 % 101).toDouble(), i.toLong())
+            while (heap.isNotEmpty()) {
+                sink += heap.firstValue()
+                heap.removeFirst()
+            }
+        }
+    }
+
+    @Test
+    fun objValueHeapWithinCapacity() {
+        val heap = IntObjMinHeap<String>(200)
+        assertReachesZeroAllocation("obj value heap") {
+            for (i in 0 until 100) heap.add(i * 7919 % 101, "x")
+            while (heap.isNotEmpty()) {
+                sink += heap.firstValue().length
+                heap.removeFirst()
+            }
+        }
+    }
+
+    @Test
     fun forUntil() = assertReachesZeroAllocation("for until") {
         for (i in 0 until list.size) sink += list[i]
     }

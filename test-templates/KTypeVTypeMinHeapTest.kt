@@ -7,6 +7,9 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
+//#if V_OBJ
+import kotlin.test.assertNull
+//#endif
 import kotlin.test.assertTrue
 
 class KTypeVTypeMinHeapTest {
@@ -29,13 +32,13 @@ class KTypeVTypeMinHeapTest {
         }
     }
 
-    /** The model is a plain list. Its minimum key is the expected first key, and the first pair must be in it. */
+    /** The model is a plain list. The key that sorts first is the expected first key, and the first pair must be in it. */
     private fun check(ops: List<Op>) {
         var heap = KTypeVTypeMinHeap()
         val model = ArrayList<Pair<KType, VType>>()
+        fun expectedFirstKey() = model.minWith(compareBy(ORDER) { it.first }).first
         fun removeFirstFromModel(): Pair<KType, VType> {
-            val minimum = model.minOf { it.first }
-            assertEquals(minimum, heap.firstKey())
+            assertEquals(expectedFirstKey(), heap.firstKey())
             val first = heap.firstKey() to heap.firstValue()
             assertTrue(model.remove(first), "$first is not in the model")
             return first
@@ -67,7 +70,7 @@ class KTypeVTypeMinHeapTest {
             }
             assertEquals(model.size, heap.size)
             assertEquals(model.isEmpty(), heap.isEmpty())
-            if (model.isNotEmpty()) assertEquals(model.minOf { it.first }, heap.firstKey())
+            if (model.isNotEmpty()) assertEquals(expectedFirstKey(), heap.firstKey())
         }
         val rest = ArrayList<Pair<KType, VType>>()
         heap.forEachUnordered { k, v -> rest += k to v }
@@ -97,9 +100,9 @@ class KTypeVTypeMinHeapTest {
         val base = IntList(7) { it }
         do {
             val heap = KTypeVTypeMinHeap()
-            base.forEach { heap.add(it.toKType(), (it * 2).toVType()) }
+            base.forEach { heap.add(rank(it), (it * 2).toVType()) }
             for (expected in 0 until 7) {
-                assertEquals(expected.toKType(), heap.firstKey())
+                assertEquals(rank(expected), heap.firstKey())
                 assertEquals((expected * 2).toVType(), heap.firstValue())
                 heap.removeFirst()
             }
@@ -122,17 +125,20 @@ class KTypeVTypeMinHeapTest {
                 out += k
                 heap.removeFirst()
             }
-            assertEquals(keys.sorted(), out)
+            assertEquals(keys.sortedWith(ORDER), out)
         }
     }
 
     @Test
     fun boundaryKeysOrderCorrectly() {
-        val heap = KTypeVTypeMinHeap()
-        BOUNDARY_KEYS.reversed().forEachIndexed { i, k -> heap.add(k, i.toVType()) }
-        for (expected in BOUNDARY_KEYS) {
-            assertEquals(expected, heap.firstKey())
-            heap.removeFirst()
+        for (input in listOf(BOUNDARY_KEYS, BOUNDARY_KEYS.reversed(), BOUNDARY_KEYS.shuffled(Random(1)))) {
+            val heap = KTypeVTypeMinHeap()
+            input.forEachIndexed { i, k -> heap.add(k, i.toVType()) }
+            for (expected in BOUNDARY_KEYS_IN_HEAP_ORDER) {
+                assertEquals(expected, heap.firstKey())
+                heap.removeFirst()
+            }
+            assertTrue(heap.isEmpty())
         }
     }
 
@@ -149,27 +155,27 @@ class KTypeVTypeMinHeapTest {
     @Test
     fun replaceFirstKeepsTheOrder() {
         val heap = KTypeVTypeMinHeap()
-        heap.add(1.toKType(), 1.toVType())
-        heap.add(2.toKType(), 2.toVType())
-        heap.add(3.toKType(), 3.toVType())
-        heap.replaceFirst(5.toKType(), 5.toVType())
-        assertEquals(2.toKType(), heap.firstKey())
+        heap.add(rank(1), 1.toVType())
+        heap.add(rank(2), 2.toVType())
+        heap.add(rank(3), 3.toVType())
+        heap.replaceFirst(rank(5), 5.toVType())
+        assertEquals(rank(2), heap.firstKey())
         assertEquals(3, heap.size)
-        heap.replaceFirst(0.toKType(), 0.toVType())
-        assertEquals(0.toKType(), heap.firstKey())
+        heap.replaceFirst(rank(0), 0.toVType())
+        assertEquals(rank(0), heap.firstKey())
         assertEquals(0.toVType(), heap.firstValue())
     }
 
     @Test
     fun removingTheOnlyElementLeavesItEmpty() {
         val heap = KTypeVTypeMinHeap()
-        heap.add(1.toKType(), 1.toVType())
+        heap.add(rank(1), 1.toVType())
         heap.removeFirst()
         assertTrue(heap.isEmpty())
         assertFalse(heap.isNotEmpty())
-        heap.add(2.toKType(), 2.toVType())
+        heap.add(rank(2), 2.toVType())
         assertTrue(heap.isNotEmpty())
-        assertEquals(2.toKType(), heap.firstKey())
+        assertEquals(rank(2), heap.firstKey())
     }
 
     @Test
@@ -181,7 +187,7 @@ class KTypeVTypeMinHeapTest {
         assertEquals(2, heap.capacity)
         heap.ensureCapacity(50)
         assertEquals(50, heap.capacity)
-        heap.add(1.toKType(), 1.toVType())
+        heap.add(rank(1), 1.toVType())
         heap.clear()
         assertEquals(0, heap.size)
         assertEquals(50, heap.capacity)
@@ -191,26 +197,26 @@ class KTypeVTypeMinHeapTest {
     @Test
     fun copyIsIndependent() {
         val heap = KTypeVTypeMinHeap()
-        heap.add(1.toKType(), 1.toVType())
+        heap.add(rank(1), 1.toVType())
         val copy = heap.copy()
-        copy.add(0.toKType(), 0.toVType())
-        copy.replaceFirst(9.toKType(), 9.toVType())
+        copy.add(rank(0), 0.toVType())
+        copy.replaceFirst(rank(9), 9.toVType())
         assertEquals(1, heap.size)
-        assertEquals(1.toKType(), heap.firstKey())
+        assertEquals(rank(1), heap.firstKey())
         assertEquals(1.toVType(), heap.firstValue())
     }
 
     @Test
     fun text() {
         val heap = KTypeVTypeMinHeap()
-        heap.add(1.toKType(), 2.toVType())
-        heap.add(3.toKType(), 4.toVType())
-        assertEquals("[1=2, 3=4]", heap.toString())
+        heap.add(rank(1), 2.toVType())
+        heap.add(rank(3), 4.toVType())
+        assertEquals("[${rank(1)}=${2.toVType()}, ${rank(3)}=${4.toVType()}]", heap.toString())
     }
 
     private fun heapOf(vararg pairs: Pair<Int, Int>): KTypeVTypeMinHeap {
         val heap = KTypeVTypeMinHeap()
-        pairs.forEach { (k, v) -> heap.add(k.toKType(), v.toVType()) }
+        pairs.forEach { (k, v) -> heap.add(rank(k), v.toVType()) }
         return heap
     }
 
@@ -242,7 +248,7 @@ class KTypeVTypeMinHeapTest {
     fun hashCodeFollowsTheFormulaAndIgnoresStaleSlots() {
         val heap = heapOf(1 to 2, 3 to 4, 5 to 6)
         heap.removeFirst()
-        val expected = 2 + (31 * 3.toKType().hashCode() + 4.toVType().hashCode()) + (31 * 5.toKType().hashCode() + 6.toVType().hashCode())
+        val expected = 2 + (31 * rank(3).hashCode() + 4.toVType().hashCode()) + (31 * rank(5).hashCode() + 6.toVType().hashCode())
         assertEquals(expected, heap.hashCode())
         assertEquals(heapOf(3 to 4, 5 to 6).hashCode(), heap.hashCode())
     }
@@ -256,7 +262,115 @@ class KTypeVTypeMinHeapTest {
         assertEquals(2, b.size)
     }
 
+    //#if K_FLOATING
+    @Test
+    fun floatingKeysUseTheTotalOrder() {
+        val a = KTypeVTypeMinHeap()
+        a.add(-0.0.toKType(), 1.toVType())
+        val b = KTypeVTypeMinHeap()
+        b.add(0.0.toKType(), 1.toVType())
+        assertNotEquals(a, b)
+        val c = KTypeVTypeMinHeap()
+        c.add(KType.NaN, 1.toVType())
+        val d = KTypeVTypeMinHeap()
+        d.add(KType.NaN, 1.toVType())
+        assertEquals(c, d)
+        assertEquals(c.hashCode(), d.hashCode())
+    }
+    //#endif
+
+    //#if V_OBJ
+    @Test
+    fun removedAndClearedValuesAreReleased() {
+        val heap = KTypeObjMinHeap<String?>()
+        heap.add(rank(1), "a")
+        heap.add(rank(2), "b")
+        heap.add(rank(3), "c")
+        heap.removeFirst()
+        assertEquals(setOf<String?>("b", "c"), setOf(heap.valueAt(0), heap.valueAt(1)))
+        assertNull(heap.valueAt(2))
+        heap.clear()
+        assertNull(heap.valueAt(0))
+        assertNull(heap.valueAt(1))
+    }
+
+    @Test
+    fun removingTheOnlyValueReleasesIt() {
+        val heap = KTypeObjMinHeap<String?>()
+        heap.add(rank(1), "a")
+        heap.removeFirst()
+        assertNull(heap.valueAt(0))
+    }
+
+    @Test
+    fun nullIsAValue() {
+        val heap = KTypeObjMinHeap<String?>()
+        heap.add(rank(2), "b")
+        heap.add(rank(1), null)
+        assertNull(heap.firstValue())
+        val other = KTypeObjMinHeap<String?>()
+        other.add(rank(1), null)
+        other.add(rank(2), "b")
+        assertEquals(heap, other)
+        assertEquals(heap.hashCode(), other.hashCode())
+        assertEquals("[${rank(1)}=null, ${rank(2)}=b]", heap.toString())
+        val different = KTypeObjMinHeap<String?>()
+        different.add(rank(1), "a")
+        different.add(rank(2), "b")
+        assertNotEquals(heap, different)
+    }
+
+    @Test
+    fun equalityUsesEqualsAndCountsDuplicates() {
+        fun heapOf(vararg values: String): KTypeObjMinHeap<String> {
+            val heap = KTypeObjMinHeap<String>()
+            values.forEach { heap.add(rank(1), String(it.toCharArray())) }
+            return heap
+        }
+        assertEquals(heapOf("a", "b", "a"), heapOf("a", "a", "b"))
+        assertNotEquals(heapOf("a", "a", "b"), heapOf("a", "b", "b"))
+    }
+
+    @Test
+    fun valuesKeepTheirTypes() {
+        val heap = KTypeObjMinHeap<List<String>>(0)
+        heap.add(rank(1), listOf("x"))
+        var seen = ""
+        heap.forEachUnordered { _, value -> seen = value[0] }
+        assertEquals("x", seen)
+        assertEquals("x", heap.firstValue()[0])
+    }
+    //#endif
+
+    private fun rank(position: Int): KType {
+        //#if K_MAX_HEAP
+        return (-position).toKType()
+        //#else
+        return position.toKType()
+        //#endif
+    }
+
     private companion object {
+        //#if K_MAX_HEAP
+        val ORDER: Comparator<KType> = reverseOrder()
+        //#else
+        val ORDER: Comparator<KType> = naturalOrder()
+        //#endif
+
+        // Written in ascending order by hand, so that the expectation does not come from a comparison under test.
+        //#if K_FLOATING
+        val BOUNDARY_KEYS = listOf(
+            KType.NEGATIVE_INFINITY, -KType.MAX_VALUE, (-1).toKType(), -0.0.toKType(), 0.0.toKType(),
+            KType.MIN_VALUE, 1.toKType(), KType.MAX_VALUE, KType.POSITIVE_INFINITY, KType.NaN,
+        )
+        //#else
         val BOUNDARY_KEYS = listOf(KType.MIN_VALUE, (-1).toKType(), K_ZERO, 1.toKType(), KType.MAX_VALUE)
+        //#endif
+
+        //#if K_MAX_HEAP
+        val BOUNDARY_KEYS_IN_HEAP_ORDER = BOUNDARY_KEYS.reversed()
+        //#else
+        val BOUNDARY_KEYS_IN_HEAP_ORDER = BOUNDARY_KEYS
+        //#endif
     }
 }
