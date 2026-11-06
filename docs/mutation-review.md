@@ -6,13 +6,15 @@
 
 | 状態 | 件数 |
 |---|---|
-| KILLED | 1852 |
-| TIMED_OUT(検出扱い) | 86 |
-| MEMORY_ERROR(検出扱い) | 2 |
-| SURVIVED | 129 |
-| スコア | 94%(基準 90%) |
+| KILLED | 1870 |
+| TIMED_OUT(検出扱い) | 87 |
+| MEMORY_ERROR(検出扱い) | 1 |
+| SURVIVED | 201 |
+| スコア | 90.69%(基準 90%) |
 
-スコアが下がったのは、同じ等価変異がペアヒープのクラスの数だけ数えられるためです。ペアヒープの生存変異は 18 クラスとも同じ 6 件で、キーの型、値の型、向きによる違いはありません(`mutations.xml` を集計して確認)。`IntList` など残りの 21 件は変わりません。
+スコアが下がったのは、同じ等価変異がペアヒープのクラスの数だけ数えられるためです。ペアヒープの生存変異は 18 クラスとも同じ 10 件で、キーの型、値の型、向きによる違いはありません(`mutations.xml` を集計して確認)。`IntList` など残りの 21 件は変わりません。
+
+**基準との差が小さいことに注意してください。** 等価変異が多いテンプレートを増やすと、テストの質が変わらなくても基準を下回ることがあります。その場合は基準を下げる前に、生存変異が等価かどうかを確認します。`modCount++` の変異を消すためだけに `modCount` の値を検査するテストは、実装の細部に縛られるだけなので追加していません。
 
 ## PIT の対象外
 
@@ -37,6 +39,7 @@
 | `IntListSort.kt` `mergeSortInt` 70 | 作業領域の計算の境界 | 作業領域が大きくなるだけ |
 | `IntListSort.kt` `mergeSortInt` 82 | 打ち切りの境界 | 何もしないパスが 1 回増えるだけ |
 | `IntListSort.kt` `mergeInt` 102 | `<= 0` を `< 0` に(マージ省略の判定) | 省略しなくても安定マージの結果は同じ |
+| `KTypeVTypeMinHeap` `add`、`removeFirst`、`replaceFirst`、`clear` | `modCount++` を `modCount--` に | `IntList` と同じく、`modCount` は変化の有無だけを比較するので等価 |
 | `KTypeVTypeMinHeap` `add` | `n + 1L` を `n - 1L` に | `IntList.add` と同じ理由で結果が同じ |
 | `KTypeVTypeMinHeap` `removeFirst` | `last > 0` を `>= 0` に | 空になるときの `siftDown` は、先頭に自分自身を書き戻すだけ。`Obj` ではその後に同じ位置を `null` にする |
 | `KTypeVTypeMinHeap` `siftUp`、`siftDown` の比較 | `<` を `<=` に | 等しいキーの間の順序だけが変わる。この順序は不定と定めている。`Double` の等しさは全順序で判定する |

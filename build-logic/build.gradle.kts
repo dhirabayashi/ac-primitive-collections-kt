@@ -33,4 +33,7 @@ gradlePlugin {
 
 tasks.test {
     useJUnitPlatform()
+    // CodegenTest reads the real templates, so a template change must rerun it.
+    inputs.dir("../templates")
+    inputs.dir("../test-templates")
 }

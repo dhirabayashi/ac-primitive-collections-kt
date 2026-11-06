@@ -62,6 +62,32 @@ class TemplateEngineTest {
     }
 
     @Test
+    fun testTemplatesOfAnyGenericCollectionGetTheTypeArgument() {
+        assertEquals(
+            "class LongObjHashMapTest { val h = LongObjHashMap<Int>(); val s = LongObjSomethingTestable<Int>() }",
+            TemplateEngine.expand(
+                "class KTypeVTypeHashMapTest { val h = KTypeVTypeHashMap(); val s = KTypeVTypeSomethingTestable() }",
+                TYPE_SPECS.getValue("Long"),
+                TEST_VALUE_SPECS.getValue("Obj"),
+            ),
+        )
+    }
+
+    @Test
+    fun testTemplatesOfPrimitiveValuesGetNoTypeArgument() {
+        assertEquals(
+            "class LongIntHashMapTest { val h = LongIntHashMap() }",
+            TemplateEngine.expand("class KTypeVTypeHashMapTest { val h = KTypeVTypeHashMap() }", TYPE_SPECS.getValue("Long"), TEST_VALUE_SPECS.getValue("Int")),
+        )
+    }
+
+    @Test
+    fun zeroIsAnOrdinaryMacroForEveryType() {
+        assertEquals("0L", TemplateEngine.expand("K_ZERO", TYPE_SPECS.getValue("Long")))
+        assertEquals("'\\u0000'", TemplateEngine.expand("K_ZERO", TYPE_SPECS.getValue("Char")))
+    }
+
+    @Test
     fun maxHeapsSwapTheOrderAndTheName() {
         assertEquals("class IntMaxHeap { val b = (y < x) }", TemplateEngine.expand("class KTypeMinHeap { val b = K_BEFORE(x, y) }", int, maxHeap = true))
         assertEquals("class IntMinHeap { val b = (x < y) }", TemplateEngine.expand("class KTypeMinHeap { val b = K_BEFORE(x, y) }", int))

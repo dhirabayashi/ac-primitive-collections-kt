@@ -29,7 +29,7 @@ private val totalOrderOperators = mapOf(
     "K_HASH" to "\$0.hashCode()",
 )
 
-/** Every type that docs/PLAN.md section 5.1 plans for. [Codegen.GENERATED_TYPES] selects the active ones. */
+/** Every key type that docs/PLAN.md section 5.1 plans for. [Codegen.GENERATED_TYPES] and [Codegen.GENERATED_PAIRS] select the active ones. */
 val TYPE_SPECS: Map<String, TypeSpec> = listOf(
     TypeSpec(
         "Int", "0", setOf("K_NUMERIC", "K_INTEGRAL", "K_HAS_RANGE", "K_INT"),
@@ -65,6 +65,8 @@ data class ValueSpec(
     val flags: Set<String>,
     val macros: Map<String, String>,
     val tokens: List<Pair<String, String>>,
+    /** In test templates, a generic class needs a type argument wherever it is named, except in the test's own name. */
+    val testClassTypeArgument: String? = null,
 ) {
     val isGeneric: Boolean get() = name == OBJ
 }
@@ -91,11 +93,8 @@ val VALUE_SPECS: Map<String, ValueSpec> = listOf(primitiveValue("Int"), primitiv
 /** The same, for test templates: an Obj heap is tested with `V = Int` so that the test bodies stay shared. */
 val TEST_VALUE_SPECS: Map<String, ValueSpec> = VALUE_SPECS + (
     OBJ to objValue.copy(
-        tokens = listOf(
-            "KTypeVTypeMinHeapTest" to "KType${OBJ}MinHeapTest",
-            "KTypeVTypeMinHeap" to "KType${OBJ}MinHeap<Int>",
-            "VType" to "Int",
-        ),
+        tokens = listOf("KTypeVType" to "KType$OBJ", "VType" to "Int"),
+        testClassTypeArgument = "<Int>",
     )
 )
 

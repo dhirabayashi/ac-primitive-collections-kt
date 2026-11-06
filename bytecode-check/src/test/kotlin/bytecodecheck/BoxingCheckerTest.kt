@@ -13,9 +13,28 @@ import bytecodecheck.fixtures.UsesList
 import kotlin.reflect.KClass
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class BoxingCheckerTest {
+    @Test
+    fun exclusionsLeaveEveryOtherClassInScope() {
+        val excluded = listOf("kotlin/", "META-INF/")
+        assertTrue(isChecked("MainKt.class", emptyList(), excluded))
+        assertTrue(isChecked("FloatList.class", emptyList(), excluded))
+        assertTrue(isChecked("ObjIntHashMap\$Cursor.class", emptyList(), excluded))
+        assertFalse(isChecked("kotlin/Pair.class", emptyList(), excluded))
+        assertFalse(isChecked("META-INF/versions/9/module-info.class", emptyList(), excluded))
+    }
+
+    @Test
+    fun prefixesNarrowTheScopeAndExclusionsWin() {
+        assertTrue(isChecked("IntList.class", listOf("Int"), emptyList()))
+        assertFalse(isChecked("FloatList.class", listOf("Int"), emptyList()))
+        assertFalse(isChecked("IntList.class", listOf("Int"), listOf("IntL")))
+        assertTrue(isChecked("IntList.class", emptyList(), emptyList()))
+    }
+
     private fun bytes(type: Class<*>): ByteArray =
         type.getResourceAsStream("/" + type.name.replace('.', '/') + ".class")!!.readBytes()
 

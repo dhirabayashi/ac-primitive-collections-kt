@@ -206,6 +206,77 @@ class LongLongMaxHeapTest {
         assertEquals(1.toLong(), heap.firstValue())
     }
 
+    private fun heapOfEight(): LongLongMaxHeap {
+        val heap = LongLongMaxHeap()
+        for (i in 1..8) heap.add(rank(i), i.toLong())
+        return heap
+    }
+
+    @Test
+    fun forEachUnorderedDetectsEveryChangeToTheHeap() {
+        // Without the check, these skip or repeat pairs and finish normally.
+        val changes = listOf<(LongLongMaxHeap) -> Unit>(
+            { it.add(rank(9), 9.toLong()) },
+            { it.removeFirst() },
+            { it.replaceFirst(rank(9), 9.toLong()) },
+            { it.clear() },
+        )
+        for (change in changes) {
+            val heap = heapOfEight()
+            var visits = 0
+            assertFailsWith<ConcurrentModificationException> {
+                heap.forEachUnordered { _, _ ->
+                    visits++
+                    if (visits == 2) change(heap)
+                }
+            }
+            assertEquals(2, visits)
+        }
+    }
+
+    @Test
+    fun forEachUnorderedDetectsAChangeOnTheLastPair() {
+        val heap = LongLongMaxHeap()
+        heap.add(rank(1), 1.toLong())
+        assertFailsWith<ConcurrentModificationException> { heap.forEachUnordered { _, _ -> heap.removeFirst() } }
+    }
+
+    @Test
+    fun forEachUnorderedAllowsChangesThatKeepThePairs() {
+        val heap = heapOfEight()
+        var visits = 0
+        heap.forEachUnordered { _, _ ->
+            heap.ensureCapacity(100)
+            heap.copy().clear()
+            visits++
+        }
+        assertEquals(8, visits)
+    }
+
+    @Test
+    fun forEachUnorderedWorksAgainAfterAChange() {
+        val heap = heapOfEight()
+        heap.removeFirst()
+        var visits = 0
+        heap.forEachUnordered { _, _ -> visits++ }
+        assertEquals(7, visits)
+    }
+
+    @Test
+    fun equalityIgnoresTheReservedCapacityAndLeavesItAlone() {
+        val a = heapOf(1 to 1, 2 to 2, 3 to 3)
+        val b = LongLongMaxHeap(3)
+        b.add(rank(3), 3.toLong())
+        b.add(rank(2), 2.toLong())
+        b.add(rank(1), 1.toLong())
+        a.ensureCapacity(1000)
+        assertEquals(a, b)
+        assertEquals(1000, a.capacity)
+        assertEquals(3, b.capacity)
+        assertEquals(a, a.copy())
+        assertEquals(1000, a.copy().capacity)
+    }
+
     @Test
     fun text() {
         val heap = LongLongMaxHeap()

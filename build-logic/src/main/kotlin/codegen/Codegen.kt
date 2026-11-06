@@ -5,10 +5,13 @@ import java.io.File
 
 /** Maps templates to generated files. The output is deterministic so CI can compare it. */
 object Codegen {
-    /** Phase 1 runs the whole pipeline on Int only. See docs/PLAN.md, section 11. */
+    /** Element types of single-type templates. Only Int so far. See docs/PLAN.md, section 11. */
     val GENERATED_TYPES = listOf("Int")
 
-    /** Key and value types of pair templates, from docs/PLAN.md section 5.1. */
+    /**
+     * Key and value types of pair templates, from docs/PLAN.md section 5.1.
+     * These are the pair heaps' combinations. Other collections need their own: see Phase 3 in that document.
+     */
     val GENERATED_PAIRS = listOf("Int", "Long", "Double").flatMap { key -> listOf("Int", "Long", "Obj").map { key to it } }
 
     private const val TEMPLATE_PREFIX = "KType"
@@ -25,7 +28,7 @@ object Codegen {
         "// into a contest submission: https://github.com/dhirabayashi/ac-primitive-collections-kt\n"
 
     /** Returns output path (relative to the output root) to content. */
-    fun generate(templateDir: File, types: List<String> = GENERATED_TYPES): Map<String, String> {
+    fun generate(templateDir: File): Map<String, String> {
         val templates = templateDir.listFiles { file ->
             file.name.startsWith(TEMPLATE_PREFIX) && file.extension == "kt"
         }.orEmpty().sortedBy { it.name }
@@ -48,7 +51,7 @@ object Codegen {
                     }
                     continue
                 }
-                for (typeName in types) {
+                for (typeName in GENERATED_TYPES) {
                     val spec = TYPE_SPECS.getValue(typeName)
                     val name = fileName.replace(TEMPLATE_PREFIX, spec.name)
                     result["ac_primitive_collections/$name"] = header(label) + TemplateEngine.expand(body, spec, maxHeap = maxHeap)

@@ -206,6 +206,77 @@ class DoubleIntMaxHeapTest {
         assertEquals(1.toInt(), heap.firstValue())
     }
 
+    private fun heapOfEight(): DoubleIntMaxHeap {
+        val heap = DoubleIntMaxHeap()
+        for (i in 1..8) heap.add(rank(i), i.toInt())
+        return heap
+    }
+
+    @Test
+    fun forEachUnorderedDetectsEveryChangeToTheHeap() {
+        // Without the check, these skip or repeat pairs and finish normally.
+        val changes = listOf<(DoubleIntMaxHeap) -> Unit>(
+            { it.add(rank(9), 9.toInt()) },
+            { it.removeFirst() },
+            { it.replaceFirst(rank(9), 9.toInt()) },
+            { it.clear() },
+        )
+        for (change in changes) {
+            val heap = heapOfEight()
+            var visits = 0
+            assertFailsWith<ConcurrentModificationException> {
+                heap.forEachUnordered { _, _ ->
+                    visits++
+                    if (visits == 2) change(heap)
+                }
+            }
+            assertEquals(2, visits)
+        }
+    }
+
+    @Test
+    fun forEachUnorderedDetectsAChangeOnTheLastPair() {
+        val heap = DoubleIntMaxHeap()
+        heap.add(rank(1), 1.toInt())
+        assertFailsWith<ConcurrentModificationException> { heap.forEachUnordered { _, _ -> heap.removeFirst() } }
+    }
+
+    @Test
+    fun forEachUnorderedAllowsChangesThatKeepThePairs() {
+        val heap = heapOfEight()
+        var visits = 0
+        heap.forEachUnordered { _, _ ->
+            heap.ensureCapacity(100)
+            heap.copy().clear()
+            visits++
+        }
+        assertEquals(8, visits)
+    }
+
+    @Test
+    fun forEachUnorderedWorksAgainAfterAChange() {
+        val heap = heapOfEight()
+        heap.removeFirst()
+        var visits = 0
+        heap.forEachUnordered { _, _ -> visits++ }
+        assertEquals(7, visits)
+    }
+
+    @Test
+    fun equalityIgnoresTheReservedCapacityAndLeavesItAlone() {
+        val a = heapOf(1 to 1, 2 to 2, 3 to 3)
+        val b = DoubleIntMaxHeap(3)
+        b.add(rank(3), 3.toInt())
+        b.add(rank(2), 2.toInt())
+        b.add(rank(1), 1.toInt())
+        a.ensureCapacity(1000)
+        assertEquals(a, b)
+        assertEquals(1000, a.capacity)
+        assertEquals(3, b.capacity)
+        assertEquals(a, a.copy())
+        assertEquals(1000, a.copy().capacity)
+    }
+
     @Test
     fun text() {
         val heap = DoubleIntMaxHeap()

@@ -39,6 +39,10 @@ class KTypeVTypeMinHeap/*<V>*/ private constructor(
         0,
     )
 
+    /** Changes with every change to the pairs, so that [forEachUnordered] can fail instead of skipping some. */
+    @PublishedApi
+    internal var modCount: Int = 0
+
     val size: Int get() = length
     val capacity: Int get() = keys.size
 
@@ -60,6 +64,7 @@ class KTypeVTypeMinHeap/*<V>*/ private constructor(
         if (n == keys.size) grow(n + 1L)
         length = n + 1
         siftUp(n, key, value)
+        modCount++
     }
 
     fun removeFirst() {
@@ -69,12 +74,14 @@ class KTypeVTypeMinHeap/*<V>*/ private constructor(
         //#if V_OBJ
         values[last] = V_NULL
         //#endif
+        modCount++
     }
 
     /** Does the work of `removeFirst` and `add` with one sift. */
     fun replaceFirst(key: KType, value: VType) {
         if (length == 0) throwEmpty()
         siftDown(key, value)
+        modCount++
     }
 
     fun clear() {
@@ -82,6 +89,7 @@ class KTypeVTypeMinHeap/*<V>*/ private constructor(
         values.fill(V_NULL, 0, length)
         //#endif
         length = 0
+        modCount++
     }
 
     fun ensureCapacity(minCapacity: Int) {
@@ -90,11 +98,13 @@ class KTypeVTypeMinHeap/*<V>*/ private constructor(
 
     fun copy(): KTypeVTypeMinHeap/*<V>*/ = KTypeVTypeMinHeap(keys.copyOf(), values.copyOf(), length)
 
-    /** Visits every pair in no particular order. */
+    /** Visits every pair in no particular order. Changing the heap from [action] throws `ConcurrentModificationException`. */
     inline fun forEachUnordered(action: (key: KType, value: VType) -> Unit) {
+        val expected = modCount
         var i = 0
         while (i < size) {
             action(keyAt(i), valueAt(i))
+            if (modCount != expected) throwConcurrentModification()
             i++
         }
     }
@@ -111,7 +121,7 @@ class KTypeVTypeMinHeap/*<V>*/ private constructor(
         val v = values
         var hole = start
         while (hole > 0) {
-            val parent = (hole - 1) ushr ARITY_SHIFT
+            val parent = (hole - 1) ushr HEAP_ARITY_SHIFT
             if (!K_BEFORE(key, k[parent])) break
             k[hole] = k[parent]
             v[hole] = v[parent]
@@ -127,11 +137,11 @@ class KTypeVTypeMinHeap/*<V>*/ private constructor(
         val v = values
         val n = length
         // Comparing with the last parent first means the child index below cannot overflow.
-        val lastParent = (n - 2) shr ARITY_SHIFT
+        val lastParent = (n - 2) shr HEAP_ARITY_SHIFT
         var hole = 0
         while (hole <= lastParent) {
-            val firstChild = (hole shl ARITY_SHIFT) + 1
-            val endChild = if (n - firstChild > ARITY) firstChild + ARITY else n
+            val firstChild = (hole shl HEAP_ARITY_SHIFT) + 1
+            val endChild = if (n - firstChild > HEAP_ARITY) firstChild + HEAP_ARITY else n
             var best = firstChild
             var child = firstChild + 1
             while (child < endChild) {
@@ -169,8 +179,8 @@ class KTypeVTypeMinHeap/*<V>*/ private constructor(
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is KTypeVTypeMinHeap/*<*>*/ || length != other.length) return false
-        val mine = copy()
-        val theirs = other.copy()
+        val mine = copyOfUsedPart()
+        val theirs = other.copyOfUsedPart()
         val myRun = V_NEW_ARRAY(length)
         val theirRun = V_NEW_ARRAY(length)
         while (mine.length > 0) {
@@ -190,6 +200,9 @@ class KTypeVTypeMinHeap/*<V>*/ private constructor(
         }
         return true
     }
+
+    /** For [equals], whose cost should not depend on a large reserved capacity. */
+    private fun copyOfUsedPart(): KTypeVTypeMinHeap/*<V>*/ = KTypeVTypeMinHeap(keys.copyOf(length), values.copyOf(length), length)
 
     /** Compares the first [n] items of both arrays in any order. May reorder them. */
     private fun sameValues(mine: VTypeArray, theirs: VTypeArray, n: Int): Boolean {
@@ -222,11 +235,5 @@ class KTypeVTypeMinHeap/*<V>*/ private constructor(
             i++
         }
         return result
-    }
-
-    private companion object {
-        /** A 4-ary heap is shallower, and its children share a cache line. See docs/judge-env.md. */
-        const val ARITY_SHIFT = 2
-        const val ARITY = 1 shl ARITY_SHIFT
     }
 }

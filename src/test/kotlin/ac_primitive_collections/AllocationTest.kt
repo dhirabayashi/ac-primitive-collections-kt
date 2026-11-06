@@ -110,6 +110,25 @@ class AllocationTest {
     }
 
     @Test
+    fun heapForEachUnordered() {
+        val heap = LongIntMinHeap(200)
+        for (i in 0 until 100) heap.add(i.toLong(), i)
+        assertReachesZeroAllocation("forEachUnordered") { heap.forEachUnordered { key, value -> sink += key + value } }
+    }
+
+    @Test
+    fun heapEqualsDoesNotCopyTheReservedCapacity() {
+        val a = IntIntMinHeap()
+        val b = IntIntMinHeap()
+        a.ensureCapacity(1_000_000)
+        b.ensureCapacity(1_000_000)
+        a.add(1, 1)
+        b.add(2, 2)
+        val used = allocated { assertTrue(a != b) }
+        assertTrue(used < 100_000, "equals allocated $used bytes for two pairs")
+    }
+
+    @Test
     fun forUntil() = assertReachesZeroAllocation("for until") {
         for (i in 0 until list.size) sink += list[i]
     }
