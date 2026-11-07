@@ -1,7 +1,7 @@
 # ac-primitive-collections-kt 計画書
 
 - 作成日: 2026-11-05
-- 状態: Phase 1(`IntList` の縦切り)。進捗は §11
+- 状態: Phase 2(線形構造とソート)の途中。公開タグは `v0.2.0`。進捗は §11
 - 対象: AtCoder の Kotlin 言語環境で使う、プリミティブ型特化コレクションライブラリ
 
 ---
@@ -174,7 +174,6 @@ val c = map.findSlot(k); if (c >= 0) map.valueAt(c)
 |---|---|
 | `Int`、`Long` | `0` |
 | `Double` | `0.0` |
-| `Boolean` | `false` |
 | `Obj`(`V`) | `null`(戻り値の型は `V?`。参照型なのでボクシングは発生しない) |
 
 - `map[k]` を読んでもエントリは追加されません(C++ の `operator[]` とは異なります)。
@@ -182,7 +181,7 @@ val c = map.findSlot(k); if (c >= 0) map.valueAt(c)
 
 同じ理由で、`put` は古い値を返しません。`remove(k): Boolean`、`removeOrDefault(k, d)`、`putIfAbsent(k, v): Boolean` に分けます。
 
-### 4.4 `Double` / `Float` の意味論
+### 4.4 `Double` の意味論
 
 テンプレートの共通化で最もバグが入りやすい箇所です。
 
@@ -209,7 +208,6 @@ val c = map.findSlot(k); if (c >= 0) map.valueAt(c)
 | 負の剰余 | `h % n` | `h and (n - 1)`、`Math.floorMod` |
 | 反転 | `-x`、`abs(x)` | Max 版を生成する。`Int.MIN_VALUE` で壊れるため |
 | パック | `(a.toLong() shl 32) or b.toLong()` | 下位側は `and 0xFFFFFFFFL`。符号拡張対策 |
-| 小さい型 | `Byte + Byte` は `Int` になる | テンプレートで明示的に変換 |
 | 自己参照 | `list.addAll(list)` | サイズを先に確定、または一時コピー |
 | 範囲引数 | `lo > hi` を未検証 | 全 API で検証 |
 | 添字 | capacity 内なら配列の境界検査を通過してしまう | `size` に対して明示的に検査 |
@@ -328,26 +326,27 @@ Kotlin の演算子と慣用表現を一通りサポートします。**標準�
 
 ### 5.1 型行列
 
-K はキー、V は値です。ソース上で約 130 クラスを見込みます。イテレータやカーソルなどの補助クラスを含めると、class ファイルはさらに増えます。jar の予算(§7.6)に収まるかは Phase 2 で実測します。
+K はキー、V は値です。ソース上で約 100 クラスを見込みます。イテレータやカーソルなどの補助クラスを含めると、class ファイルはさらに増えます。jar の予算(§7.6)に収まるかは Phase 2 で実測します。
 
 | コレクション | 型 | クラス数 |
 |---|---|---|
-| `List` | Int, Long, Double, Float, Char, Short, Byte, Boolean | 8 |
-| `SubList` | 同上 | 8 |
-| `Deque` | 同上 | 8 |
-| `MinHeap` / `MaxHeap` | Boolean 以外の 7 型 × 2 | 14 |
+| `List` | Int, Long, Double, Char | 4 |
+| `SubList` | 同上 | 4 |
+| `Deque` | 同上 | 4 |
+| `MinHeap` / `MaxHeap` | Int, Long, Double × 2 | 6 |
 | ペアヒープ `KVMinHeap` / `KVMaxHeap` | K: Int, Long, Double × V: Int, Long, Obj × 2 | 18 |
 | `IndexedMinHeap` / `IndexedMaxHeap` | K: Int, Long, Double × 2 | 6 |
 | 比較関数付きヒープと比較関数インターフェース(`IntComparator` など) | Int, Long, Double × 2 | 6 |
-| `HashSet` | Boolean 以外の 7 型 | 7 |
-| `HashMap` | K: Int, Long, Char, Double, Obj × V: Int, Long, Double, Boolean, Obj(Obj-Obj を除く) | 24 |
+| `HashSet` | Int, Long, Double, Char | 4 |
+| `HashMap` | K: Int, Long, Char, Double, Obj × V: Int, Long, Double, Obj(Obj-Obj を除く) | 19 |
 | `TreeSet` | Int, Long, Double, Char | 4 |
 | `TreeMultiset` | Int, Long, Double, Char | 4 |
 | `TreeMap` | K: Int, Long, Double, Char × V: Int, Long, Double, Obj | 16 |
 | 単独クラス | `FixedBitSet`、`FastSet`、`CsrGraph`、`IntPair` など | 数個 |
 
 - `UInt` / `ULong`: v1 では対象外です。生成器の型定義は拡張可能にしておき、需要があれば追加します。
-- `Byte` / `Short` キーの Map: 配列で直接引けるため、v1 では作りません。
+- **`Float`、`Short`、`Byte`、`Boolean` のコレクションは作りません。** 所有者が AtCoder で使わないためです。必要になったら `IntList` や `FixedBitSet` などで代用します。`Boolean` は Map の値にもしません(`HashSet` で表せます)。
+- **`Char` のヒープも作りません。** 文字をヒープで扱う場面はまれで、`IntMinHeap` に文字コードを入れれば足ります。
 
 ### 5.2 共通操作
 
@@ -391,7 +390,7 @@ K はキー、V は値です。ソース上で約 130 クラスを見込みま�
 - **確保:** 呼び出しごとに 1 オブジェクトを確保します。ホットループの中では、`IntList` の範囲引数つき API(`sort(from, to)` など)の方が確実です。
 - **バンドル:** `subList` を使っていない提出に `IntSubList` が含まれないように、`IntList` のメンバーではなく拡張関数として定義します。
 
-**対象は `List` のみです(8 型)。** `Deque` は範囲の反復とコピーで足り、配列には標準の `copyOfRange` や範囲引数つきの `sort` があります。
+**対象は `List` のみです(4 型)。** `Deque` は範囲の反復とコピーで足り、配列には標準の `copyOfRange` や範囲引数つきの `sort` があります。
 
 #### 5.3.2 `fold` と `sumOf`(Phase 1 の実装で確定)
 
@@ -549,10 +548,8 @@ Kotlin には `<<` がないので、`shl` / `shr` は `Int` と同じ中置関�
 | 対象 | 既定の実装 | 検討する代替 | 採用条件 |
 |---|---|---|---|
 | Int 自然順 | `Arrays.sort` | なし | **決定**: 自作しない。5×10^6 要素で最小 37 ms |
-| Float 自然順 | `Arrays.sort` | なし | 未計測だが、Int と同じく SIMD の対象なので自作を検討しない |
-| Boolean | 計数ソート(`false` → `true` の順) | なし | `boolean[]` には `Arrays.sort` がない |
 | Long / Double 自然順 | `Arrays.sort` | なし | **決定**: 自作しない。Long は 5×10^6 要素で最小 74 ms。8 bit 基数ソートは 167 ms で、採用条件(1.3 倍以上速い)を満たさない |
-| Byte / Short / Char | `Arrays.sort`(JDK が計数ソートを使用) | なし | 自作不要 |
+| Char | `Arrays.sort`(JDK が計数ソートを使用) | なし | 自作不要 |
 | 降順 | 昇順 + 反転 | なし | 符号反転は使わない |
 | `argsort`、`sortBy { intKey }` | `(key.toLong() shl 32) or i` を Long ソート | | 比較関数不要で安定。実機で Long の `Arrays.sort` が速いので、Int キーで最速の見込み |
 | `sortBy { longKey }` | キー配列 + 添字の同時ソート、基数ソート | | 64 bit に収まらないため別実装 |
@@ -605,7 +602,7 @@ Kotlin には `<<` がないので、`shl` / `shr` は `Int` と同じ中置関�
 | **相互運用** | 標準コレクションとの往復変換で内容が一致すること(空、`MIN` / `MAX`、`NaN`、`±0.0` を含む)、Tree 系の変換で順序が保たれること、変換後の変更が元に影響しないこと |
 | **不在時の `map[k]`** | 全組み合わせでゼロ値を返すこと、読み取りでサイズが変わらないこと、値 0 のキーが `k in map` では存在扱いになること |
 | **自己参照** | `addAll(self)`、`putAll(self)`、`retainAll(self)` |
-| **オーバーフロー** | `nextCapacity` などの純粋関数を境界値で単体テスト。さらに夜間ジョブで `ByteList` を実際に 2^31 付近まで拡張 |
+| **オーバーフロー** | `nextCapacity` などの純粋関数を境界値で単体テスト。実際に 2^31 付近まで拡張するテストは行わない(`ByteList` を作らず、`IntList` では 8 GiB 必要で、ジャッジのヒープ約 922 MiB でも届かないため) |
 | **意味論** | `equals` / `hashCode` の整合、`copy` の独立性、`clear` 後の再利用、`toString` |
 
 シードは失敗時に出力し、`-Dseed=...` で再現できるようにします。失敗した操作列は自動で短縮して(ddmin)、回帰テストとして追加します。
@@ -865,7 +862,7 @@ class KTypeList { /* KType を使って実装 */ }
 
 | 項目 | 状態 |
 |---|---|
-| 生成器、テンプレート、`generated/`、一致検査 | 完了(Int のみ生成。型定義は 8 型分あるが、他の型の展開は Phase 2 で初めてコンパイルされる) |
+| 生成器、テンプレート、`generated/`、一致検査 | 完了(Int のみ生成。他の型の展開は Phase 2 で初めてコンパイルされる) |
 | `IntList`、`IntSubList`、変換、比較関数ソート、argsort | 完了 |
 | 差分テスト、ddmin、網羅テスト、手書きテスト、例外仕様 | 完了 |
 | ボクシング検査(ライブラリと `MainKt`)、メソッドサイズ、確保量 | 完了。検査器自体もテスト済み |
@@ -884,9 +881,7 @@ class KTypeList { /* KType を使って実装 */ }
 **Phase 2 に残したもの**
 
 - `mapToLong` などの型変換(`LongList` が必要)、`sortBy { longKey }`、`sortBy { doubleKey }`
-- `ByteList` を 2^31 付近まで拡張する夜間テスト(§7.2)
 - `argsort`、`sortBy` の実装は Int のキーを前提にしており、Long と Double の展開には別実装が必要
-- Boolean の展開(`Arrays.sort` と `binarySearch` がない)
 
 ### Phase 2: 線形構造とソート
 
@@ -903,9 +898,24 @@ class KTypeList { /* KType を使って実装 */ }
 | `PriorityQueue` との比較 | 完了。Dijkstra 部分が 2.3 倍速い。`modCount` を入れた後も処理時間に悪化は見られない(`docs/judge-env.md` §7) |
 | タグの作成 | 完了(`v0.2.0`)。ペアヒープをコンテストで使える |
 | 他の型の組み合わせと `Max` のペアヒープ | 完了。§5.1 の 18 クラスを 1 つのテンプレートから生成し、全ゲートを通過(分岐カバレッジ 100%、変異テスト 91%)、E2E 通過。AtCoder への提出は判断が変わらないので行っていない |
-| 全型の `List` | **未実施**(「Phase 2 に残したもの」も参照)。試しに展開した結果(コミットしていない): Char と Boolean は `K_SUM_TYPE` がなく生成の時点で失敗。Long、Double、Float、Short、Byte は `KTypeListSort` で 1 件ずつコンパイルエラー。コンパイラは早い段階で止まるので、エラーがこれだけとは限らない |
+| 全型の `List` | **未実施**(「Phase 2 に残したもの」も参照)。対象は Int、Long、Double、Char(§5.1)。試しに展開した結果(コミットしていない): Char は `K_SUM_TYPE` がなく生成の時点で失敗。Long、Double は `KTypeListSort` で 1 件ずつコンパイルエラー。コンパイラは早い段階で止まるので、エラーがこれだけとは限らない |
 | `Deque`、単純ヒープ、インデックス付きヒープ、配列拡張 | **未実施** |
 | ソートの実測と採否(§6)、argsort の代表問題 | **未実施** |
+
+**積んである作業**
+
+どれも未着手です。順序と着手の時期は所有者が決めます。AtCoder での手作業が必要なものは、着手するときに手順を具体的に示して依頼します。
+
+| 作業 | 内容 | 手作業 |
+|---|---|---|
+| 最新の push 済みタグからのバンドル | 今の `./submit` は、タグの位置にチェックアウトしていないと失敗する。開発中のブランチのままでも、コンテスト用に提出できるようにする | なし |
+| コンパイル時間とソース長の上限の調査 | §15 の最大の未知数。全型の `List` で提出コードを増やす前に確かめたい | コードテスト(`e2e/experiments/size-probe.py`) |
+| `nextCapacity` の拡張率の決定 | 暫定で 1.5 倍のまま | コードテスト(`e2e/experiments/GrowthRate.kt`) |
+| 全型の `List` | 試しに展開した結果は上の表のとおり。「Phase 2 に残したもの」も含む。あわせて、`KTypeList` と `KTypeSubList` のテンプレートが Int 版のままではコンパイルできない問題(`nextKType`)を直し、§11 の記述と揃える。**`Char` には `sum` を作らず、`K_NUMERIC` で分ける**(`sumOf` は残す)。テストの数値前提が `Char` で通るかは、展開して確かめる | なし |
+| `Deque`、単純ヒープ、インデックス付きヒープ、配列拡張 | §5.4、§5.5、§5.8 | なし |
+| ソートの採否と argsort の代表問題 | §6。Phase 2 の完了条件 | 提出 |
+| メモリの目標の確認 | §15。JVM の基礎分を差し引いて、`java.util` 比 1/3 以下を満たすかを確かめる | コードテスト |
+| 変異テストの基準の見直し | 90.69% と基準に近い。同じ等価変異がクラスの数だけ数えられるので、§7.1 の「代表型で 90% 以上」に対象を絞るか、確認済みの生存変異との差分を見る形にするかを決める | なし |
 
 ### Phase 3: ハッシュ
 
@@ -915,8 +925,8 @@ class KTypeList { /* KType を使って実装 */ }
 
 今の生成器では `KTypeVType*` のテンプレートがすべて同じ組み合わせで展開されるので、`HashMap` に必要なクラスを生成できません。利用者がペアヒープだけの間は作っても確かめられないので、ここで行います。
 
-- `Codegen.GENERATED_PAIRS` をやめ、キーと値の組み合わせをテンプレートごとに持たせる。§5.1 の `HashMap`(`Obj`-`Obj` を除く 24 クラス)と `TreeMap` の組み合わせを表せるようにする
-- 値に `Double` と `Boolean` を、キーに `Obj` を追加する(`VALUE_SPECS` と `TYPE_SPECS`)
+- `Codegen.GENERATED_PAIRS` をやめ、キーと値の組み合わせをテンプレートごとに持たせる。§5.1 の `HashMap`(`Obj`-`Obj` を除く 19 クラス)と `TreeMap` の組み合わせを表せるようにする
+- 値に `Double` を、キーに `Obj` を追加する(`VALUE_SPECS` と `TYPE_SPECS`)
 - `CodegenTest` の期待値に各コレクションの組み合わせを加え、§5.1 と一致することを確かめる
 
 **完了条件**: 差分テストと劣化ケースのテストの通過。HPPC / fastutil との比較。
@@ -985,7 +995,7 @@ AVL / WBT と B+ 木の比較実験(Int キーのみで実装)、方式の決定
 | タイミング | 内容 |
 |---|---|
 | PR | 生成の決定性と `generated/` の一致、ビルド、差分テスト(短)、カバレッジ、ボクシング検査、確保量、禁止パターン、`reuse lint`、E2E |
-| 夜間 | 差分テスト(長)、PIT、JMH の回帰検知、巨大容量テスト |
+| 夜間 | 差分テスト(長)、PIT、JMH の回帰検知 |
 | リリース | 全ゲート、jar とソースの公開、バンドラ出力の検証 |
 
 ---
@@ -1005,6 +1015,7 @@ AVL / WBT と B+ 木の比較実験(Int キーのみで実装)、方式の決定
 | Kotlin の演算子と慣用表現 | `[]`、`in`、`+` などを一通りサポートする(§4.8) |
 | リポジトリ名 | `ac-primitive-collections-kt` |
 | パッケージ名 | `ac_primitive_collections`(`import ac_primitive_collections.*`)。ジャッジ導入済みの `ac_library` と同じ形式 |
+| 対象の型 | Int、Long、Double、Char のみ。`Float`、`Short`、`Byte`、`Boolean` は使わないので作らない。`Char` のヒープも作らない(§5.1) |
 | `map[k]` の不在時 | ゼロ値を返す。存在確認は `k in map` などで可能(§4.3) |
 | 生成コードの公開 | `generated/` にコミットし、テンプレートとの一致を CI で検査する(§9) |
 | Gradle | 8.14.3。Kotlin Gradle プラグイン 2.2.10 の対応範囲に合わせる(§11 Phase 0) |
@@ -1048,7 +1059,7 @@ AVL / WBT と B+ 木の比較実験(Int キーのみで実装)、方式の決定
 | `nextCapacity` の拡張率 | 暫定で 1.5 倍 | 未実施。Phase 2 以降(`e2e/experiments/GrowthRate.kt`) |
 | `java.util` との 1 回実行の比較(S5) | `IntList` は 10^6 要素で 2.1 倍速い(`docs/judge-env.md` §6)。`LongIntMinHeap` は実行時間全体で 1.4 倍速い(同 §7)。他のコレクションは各 Phase で確認 | 各 Phase |
 | メモリの目標(`java.util` 比 1/3 以下) | 未確認。プロセス全体では 0.67 倍だが JVM の基礎分を含む | Phase 2 |
-| `add` の n = 10^6 での速度 | `modCount` の有無と関係なく、同じ構造の比較クラスより約 1.5 倍遅い(0.40 と 0.55〜0.68 ops/ms)。原因は未解明。`ArrayList`(0.25)には勝つ | Phase 2 |
+| `add` の n = 10^6 での速度 | `modCount` の有無と関係なく、同じ構造の比較クラスより約 1.5 倍遅い(0.40 と 0.55〜0.68 ops/ms)。原因は未解明。`ArrayList`(0.25)には勝つ。値は arm64 の JMH だけで、判断には使えない(§7.6) | x64 の CI で JMH を確認するとき |
 | コードテストと本番のジャッジが同じ構成か | 未確認。コードテストの実測は `docs/judge-env.md` | 確認手段なし |
 | `Arrays.sort` の SIMD 実装が実際に使われているか | 直接は未確認。実機の速度は SIMD の利用と整合する | 確認手段なし |
 | §5〜§7 の性能に関する見込みと目標値 | 仮説。実測後に確定 | 各 Phase。B+ 木の速度差は Phase 4 |

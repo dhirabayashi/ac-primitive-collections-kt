@@ -4,7 +4,7 @@ AtCoder 用の、ボクシングしない Kotlin プリミティブコレクシ�
 
 ## 最初に読むもの
 
-- 設計と計画: `docs/PLAN.md`。現在地は「Phase 2 の進捗」、未確認事項は §15 にあります。
+- 設計と計画: `docs/PLAN.md`。現在地は「Phase 2 の進捗」、次の候補はその下の「積んである作業」、未確認事項は §15 にあります。次に何をするかは所有者が決めるので、指示なしに着手しません。
 - AtCoder での実測: `docs/judge-env.md`
 - 生存変異の確認: `docs/mutation-review.md`
 
@@ -24,7 +24,7 @@ JDK は Gradle が 23 を選びます(`gradle/gradle-daemon-jvm.properties`)。
 ./gradlew check koverVerify :build-logic:test --continue
 ./gradlew pitest                             # 閾値 90%。生存変異は docs/mutation-review.md で確認
 ./e2e/run-e2e.sh                             # Docker が必要。ジャッジ再現環境で貼り付けと jar の両方
-reuse lint                                   # 未導入なら venv に pip install reuse
+reuse lint                                   # 未導入なら venv に pip install 'reuse[charset-normalizer]'
 ```
 
 ボクシング、確保量、分岐カバレッジ 100%、メソッド長、禁止パターンは `check koverVerify` に含まれます。JMH の値は arm64 なので、判断には使いません(§7.6)。
@@ -34,7 +34,7 @@ reuse lint                                   # 未導入なら venv に pip inst
 - 解答用プロジェクトは `/Users/daiki/IdeaProjects/atcoder`(git 管理外)です。このリポジトリを `includeBuild` しています。提出コードは `./submit` でクリップボードに入ります。
 - `./submit -p` は練習用で、今の作業状態からバンドルします。
 - `./submit`(コンテスト用)は、このリポジトリが **push 済みのタグの位置**で、`generated/main` と `src/main` に変更がないときだけ動きます。公開タグは `v0.2.0`(`IntList`、`IntSubList`、ペアヒープ 18 クラス)です。開発中のブランチにいると失敗するので、コンテストの前に `git checkout v0.2.0` が必要です。「最新の push 済みタグからバンドルする」改善案は未着手です。
-- コードテスト用のファイルは次のように作ります。
+- コードテストのページは https://atcoder.jp/contests/abc340/custom_test などです。終了済みのコンテストのものを使います。ファイルは次のように作ります。
 
   ```sh
   ./bundle -p -o <出力先>.kt e2e/experiments/compare-priorityqueue/Main.kt
