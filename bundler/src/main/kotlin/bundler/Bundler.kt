@@ -74,7 +74,7 @@ object Bundler {
         return BundleResult(source, ordered.map { it.name }, warnings)
     }
 
-    private fun isLibraryImport(path: String) = path == "$LIBRARY_PACKAGE.*" || path.startsWith("$LIBRARY_PACKAGE.")
+    fun isLibraryImport(path: String) = path == "$LIBRARY_PACKAGE.*" || path.startsWith("$LIBRARY_PACKAGE.")
 
     private fun checkUserImports(main: SourceFile) {
         for (path in main.imports.filter(::isLibraryImport)) {

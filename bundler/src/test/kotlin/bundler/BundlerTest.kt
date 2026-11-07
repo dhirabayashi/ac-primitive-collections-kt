@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: CC0-1.0
 package bundler
 
+import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -262,60 +263,142 @@ class SourceFileTest {
 }
 
 class PublicationTest {
-    private class FakeGit(val answers: Map<String, String?>) : Git {
-        override fun run(vararg args: String): String? = answers[args.first()]
+    private class FakeGit(val answers: Map<String, String?>, val files: Map<String, String> = emptyMap()) : Git {
+        override fun run(vararg args: String): String? =
+            if (args.first() == "show") files[args[1]] else answers[args.first()]
     }
 
-    private val published = mapOf(
+    private val pushed = mapOf(
         "remote" to "git@github.com:me/repo.git",
-        "status" to "",
-        "tag" to "v0.1.0\nv0.0.9\nother",
         "rev-parse" to "abc",
         "ls-remote" to "tagobject\trefs/tags/v0.1.0\nabc\trefs/tags/v0.1.0^{}",
     )
 
+    private fun latest(lsRemote: String) = Publication.latestRelease(FakeGit(mapOf("ls-remote" to lsRemote)))
+
     @Test
-    fun pinsTheUrlToThePublishedTag() {
-        assertEquals(
-            "// Library source (created with generative AI): https://github.com/me/repo/tree/v0.1.0",
-            Publication.referenceLine(FakeGit(published), allowUnpublished = false),
-        )
+    fun usesTheCommitOfAnAnnotatedTag() {
+        assertEquals(Release("v0.1.0", "abc"), Publication.latestRelease(FakeGit(pushed)))
     }
 
     @Test
     fun acceptsALightweightTag() {
-        val git = FakeGit(published + ("ls-remote" to "abc\trefs/tags/v0.1.0"))
-        assertTrue("tree/v0.1.0" in Publication.referenceLine(git, false))
-    }
-
-    private fun assertRejected(change: Pair<String, String?>, expected: String) {
-        val git = FakeGit(published + change)
-        val failure = assertFailsWith<BundleException> { Publication.referenceLine(git, false) }
-        assertTrue(expected in failure.message!!, failure.message)
-        assertTrue("UNPUBLISHED" in Publication.referenceLine(git, true))
+        assertEquals(Release("v0.1.0", "abc"), latest("abc\trefs/tags/v0.1.0"))
     }
 
     @Test
-    fun rejectsUncommittedChanges() = assertRejected("status" to " M src/main/x.kt", "uncommitted")
+    fun comparesVersionsAsNumbers() {
+        assertEquals("v0.10.0", latest("a\trefs/tags/v0.10.0\nb\trefs/tags/v0.9.0").tag)
+        assertEquals("v1.0.1", latest("a\trefs/tags/v1.0\nb\trefs/tags/v1.0.1").tag)
+        assertEquals("v1.1", latest("a\trefs/tags/v1.1\nb\trefs/tags/v1.0.5").tag)
+    }
 
     @Test
-    fun rejectsMissingStatus() = assertRejected("status" to null, "status")
+    fun ignoresTagsThatAreNotReleases() {
+        assertEquals("v0.1.0", latest("a\trefs/tags/v0.1.0\nb\trefs/tags/v9.0.0-rc1\nc\trefs/tags/other\nd\trefs/tags/vnext").tag)
+    }
 
     @Test
-    fun rejectsAnUntaggedHead() = assertRejected("tag" to "", "no release tag")
+    fun rejectsAnOriginWithoutReleases() {
+        val failure = assertFailsWith<BundleException> { latest("a\trefs/tags/other") }
+        assertTrue("no release tag" in failure.message!!, failure.message)
+        assertFailsWith<BundleException> { latest("") }
+    }
 
     @Test
-    fun rejectsAnUnpushedTag() = assertRejected("ls-remote" to "", "not on origin")
+    fun rejectsAnUnreachableRemote() {
+        val failure = assertFailsWith<BundleException> { Publication.latestRelease(FakeGit(pushed + ("ls-remote" to null))) }
+        assertTrue("Cannot reach" in failure.message!!, failure.message)
+    }
 
     @Test
-    fun rejectsAMovedTag() = assertRejected("ls-remote" to "zzz\trefs/tags/v0.1.0", "somewhere other")
+    fun readsSourcesFromTheReleaseCommit() {
+        val git = FakeGit(
+            mapOf("ls-tree" to "generated/main/kotlin/ac_primitive_collections/B.kt\nsrc/main/kotlin/A.kt\nsrc/main/kotlin/notes.txt"),
+            mapOf("abc:generated/main/kotlin/ac_primitive_collections/B.kt" to "class B", "abc:src/main/kotlin/A.kt" to "class A"),
+        )
+        val files = Publication.loadRelease(git, Release("v0.1.0", "abc"))
+        assertEquals(listOf("A.kt" to "class A", "B.kt" to "class B"), files.map { it.name to it.text })
+    }
 
     @Test
-    fun rejectsAnUnreachableRemote() = assertRejected("ls-remote" to null, "Cannot reach")
+    fun tellsHowToGetACommitThatIsNotHere() {
+        val noCommit = FakeGit(mapOf("ls-tree" to null))
+        val failure = assertFailsWith<BundleException> { Publication.loadRelease(noCommit, Release("v0.1.0", "abc")) }
+        assertTrue("git fetch --tags origin" in failure.message!!, failure.message)
+        val noFile = FakeGit(mapOf("ls-tree" to "src/main/kotlin/A.kt"))
+        assertFailsWith<BundleException> { Publication.loadRelease(noFile, Release("v0.1.0", "abc")) }
+    }
+
+    @Test
+    fun rejectsATagWithoutSources() {
+        val failure = assertFailsWith<BundleException> { Publication.loadRelease(FakeGit(mapOf("ls-tree" to "")), Release("v0.1.0", "abc")) }
+        assertTrue("no library sources" in failure.message!!, failure.message)
+    }
+
+    @Test
+    fun pinsTheUrlToTheTag() {
+        assertEquals(
+            "// Library source (created with generative AI): https://github.com/me/repo/tree/v0.1.0",
+            Publication.referenceLine(FakeGit(pushed), Release("v0.1.0", "abc")),
+        )
+    }
+
+    @Test
+    fun marksPracticeOutputAsUnpublished() {
+        assertTrue("UNPUBLISHED local state at abc" in Publication.unpublishedReferenceLine(FakeGit(pushed)))
+        assertTrue("unknown" in Publication.unpublishedReferenceLine(FakeGit(pushed + ("rev-parse" to null))))
+    }
 
     @Test
     fun requiresARemote() {
-        assertFailsWith<BundleException> { Publication.referenceLine(FakeGit(published + ("remote" to null)), true) }
+        val noRemote = FakeGit(pushed + ("remote" to null))
+        assertFailsWith<BundleException> { Publication.referenceLine(noRemote, Release("v0.1.0", "abc")) }
+        assertFailsWith<BundleException> { Publication.unpublishedReferenceLine(noRemote) }
+    }
+
+    private val userCode = SourceFile("Main.kt", "import ac_primitive_collections.*\n\nfun helper() = Newer()\n")
+
+    private fun differences(main: SourceFile, included: List<String>, published: List<SourceFile>, local: List<SourceFile>) =
+        Publication.localDifferenceWarnings(main, included, published, local, "v0.1.0")
+
+    @Test
+    fun saysNothingWhenTheLocalLibraryMatches() {
+        val file = SourceFile("A.kt", "class A\n")
+        assertEquals(emptyList(), differences(userCode, listOf("A.kt"), listOf(file), listOf(SourceFile("A.kt", "class A"))))
+    }
+
+    @Test
+    fun warnsOnlyAboutChangedFilesInTheSubmission() {
+        val published = listOf(SourceFile("A.kt", "class A"), SourceFile("B.kt", "class B"))
+        val local = listOf(SourceFile("A.kt", "class A { val x = 1 }"), SourceFile("B.kt", "class B { val x = 1 }"))
+        val warning = differences(userCode, listOf("A.kt"), published, local).single()
+        assertTrue("v0.1.0" in warning && "A.kt" in warning && "B.kt" !in warning, warning)
+    }
+
+    @Test
+    fun saysNothingAboutAnIncludedFileThatIsGoneLocally() {
+        assertEquals(emptyList(), differences(userCode, listOf("A.kt"), listOf(SourceFile("A.kt", "class A")), emptyList()))
+    }
+
+    @Test
+    fun warnsAboutNamesThatOnlyTheLocalLibraryHas() {
+        val published = listOf(SourceFile("A.kt", "class A"))
+        val local = published + SourceFile("Newer.kt", "class Newer\nclass Unused")
+        val warning = differences(userCode, emptyList(), published, local).single()
+        assertTrue("Newer" in warning && "Unused" !in warning, warning)
+    }
+
+    @Test
+    fun aNameTheUserDeclaresIsNotANewerLibraryName() {
+        val main = SourceFile("Main.kt", "import ac_primitive_collections.*\n\nclass Newer\n")
+        assertEquals(emptyList(), differences(main, emptyList(), emptyList(), listOf(SourceFile("Newer.kt", "class Newer"))))
+    }
+
+    @Test
+    fun codeWithoutTheLibraryImportHasNoDifferences() {
+        val main = SourceFile("Main.kt", "fun main() { Newer() }\n")
+        assertEquals(emptyList(), differences(main, emptyList(), emptyList(), listOf(SourceFile("Newer.kt", "class Newer"))))
     }
 
     @Test
@@ -323,5 +406,44 @@ class PublicationTest {
         assertEquals("https://github.com/o/r", Publication.httpsUrl("git@github.com:o/r.git"))
         assertEquals("https://github.com/o/r", Publication.httpsUrl("https://github.com/o/r.git"))
         assertEquals("https://github.com/o/r", Publication.httpsUrl("https://github.com/o/r"))
+    }
+}
+
+/** Runs the real git, because a fake cannot catch wrong arguments. */
+class PublicationGitTest {
+    @Test
+    fun readsThePushedTagWhateverTheWorkingTreeHolds() {
+        val base = createTempDirectory("publication").toFile()
+        try {
+            val origin = base.resolve("origin.git").apply { mkdirs() }
+            val work = base.resolve("work").apply { mkdirs() }
+            val source = work.resolve("generated/main/kotlin/ac_primitive_collections/A.kt")
+            source.parentFile.mkdirs()
+            fun git(directory: java.io.File, vararg args: String) {
+                val identity = arrayOf("-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false")
+                assertTrue(ProcessGit(directory).run(*identity, *args) != null, args.joinToString(" "))
+            }
+            git(origin, "init", "--bare")
+            git(work, "init")
+            git(work, "remote", "add", "origin", origin.path)
+            source.writeText("class Published\n")
+            git(work, "add", ".")
+            git(work, "commit", "-m", "first")
+            git(work, "tag", "-a", "v0.1.0", "-m", "first")
+            git(work, "push", "origin", "HEAD", "--tags")
+            source.writeText("class Committed\n")
+            git(work, "commit", "-am", "second")
+            git(work, "tag", "v0.2.0")
+            source.writeText("class Uncommitted\n")
+
+            val gitInWork = ProcessGit(work)
+            val release = Publication.latestRelease(gitInWork)
+            assertEquals("v0.1.0", release.tag)
+            val file = Publication.loadRelease(gitInWork, release).single()
+            assertEquals("A.kt", file.name)
+            assertEquals("class Published", file.text.trim())
+        } finally {
+            base.deleteRecursively()
+        }
     }
 }
