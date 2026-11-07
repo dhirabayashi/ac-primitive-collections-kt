@@ -47,8 +47,14 @@ dependencies {
     testImplementation(kotlin("test"))
 }
 
+// The templates are valid Kotlin for Int (docs/PLAN.md, section 11). Compiling them keeps that true for the IDE.
+val templateCheck by sourceSets.creating {
+    kotlin.srcDir("templates")
+    kotlin.srcDir("src/main/kotlin")
+}
+
 tasks.check {
-    dependsOn("checkGenerated")
+    dependsOn("checkGenerated", tasks.named(templateCheck.getCompileTaskName("kotlin")))
 }
 
 // ---- The release jar. See docs/PLAN.md, section 10.2. ----
@@ -64,6 +70,9 @@ tasks.jar {
 // ---- Coverage. See docs/PLAN.md, section 7.1. ----
 
 kover {
+    currentProject {
+        sources { excludedSourceSets.add("templateCheck") }
+    }
     reports {
         filters {
             includes { packages("ac_primitive_collections") }
@@ -112,7 +121,9 @@ pitest {
     excludedMethods = setOf(
         "all", "any", "count", "none", "filter", "map", "fold", "sumOf", "removeIf",
         "forEach", "forEachIndexed", "forEachReversed", "indexOfFirst", "indexOfLast",
-        "firstOrElse", "lastOrElse", "sortBy", "argsortBy", "IntList", "buildIntList", "forEachUnordered",
+        "firstOrElse", "lastOrElse", "sortBy", "sortByLong", "sortByDouble", "argsortBy", "argsortByLong", "argsortByDouble",
+        "IntList", "LongList", "DoubleList", "CharList", "buildIntList", "buildLongList", "buildDoubleList", "buildCharList",
+        "mapToInt", "mapToLong", "mapToDouble", "mapToChar", "forEachUnordered",
     )
     threads = Runtime.getRuntime().availableProcessors()
     outputFormats = setOf("HTML", "XML")

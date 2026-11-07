@@ -462,7 +462,7 @@ class IntList @PublishedApi internal constructor(
         }
     }
 
-    /** Returns a same-typed list. Conversions to other element types arrive with those types. */
+    /** Returns a same-typed list. Conversions to other element types are `mapToLong` and so on. */
     inline fun map(transform: (Int) -> Int): IntList {
         val result = IntList(length)
         forEach { result.add(transform(it)) }

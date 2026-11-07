@@ -124,12 +124,25 @@ class IntSubList @PublishedApi internal constructor(
     inline fun sortBy(selector: (Int) -> Int) {
         val keys = LongArray(size)
         forEachIndexed { index, value -> keys[index] = packKeyAndIndex(selector(value), index) }
-        applySortedKeys(keys)
+        applySortedIndices(sortedIndices(keys))
+    }
+
+    /** Sorts stably by a Long key without a comparator. */
+    inline fun sortByLong(selector: (Int) -> Long) {
+        val keys = LongArray(size)
+        forEachIndexed { index, value -> keys[index] = selector(value) }
+        applySortedIndices(sortedIndicesByKey(keys))
+    }
+
+    /** Sorts stably by a Double key without a comparator, in the order of `Double.compareTo`. */
+    inline fun sortByDouble(selector: (Int) -> Double) {
+        val keys = LongArray(size)
+        forEachIndexed { index, value -> keys[index] = totalOrderKey(selector(value)) }
+        applySortedIndices(sortedIndicesByKey(keys))
     }
 
     @PublishedApi
-    internal fun applySortedKeys(keys: LongArray) {
-        val indices = sortedIndices(keys)
+    internal fun applySortedIndices(indices: IntArray) {
         val source = toIntArray()
         var i = 0
         while (i < indices.size) {

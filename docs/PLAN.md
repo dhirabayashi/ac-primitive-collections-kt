@@ -365,9 +365,9 @@ K はキー、V は値です。ソース上で約 100 クラスを見込みま�
 | 削除 | `removeAt`、`removeLast`、`removeFirst`、`removeValue`、`removeRange`、`swapRemove`、`removeIf {}`、`truncate(n)` |
 | 容量 | `ensureCapacity`、`trimToSize`、`resize(n, fill)`、`capacity` |
 | 検索 | `contains`、`indexOf`、`lastIndexOf`、`binarySearch`、`lowerBound`、`upperBound`、`indexOfFirst {}`、`indexOfLast {}` |
-| 並べ替え | `sort`、`sortDescending`、`sort(from, to)`、`sortWith(IntComparator)`、`sortBy {}`、`argsort`、`reverse`、`shuffle(Random)`、`swap`、`rotate`、`fill`、`dedupe`(隣接重複の除去)、`nextPermutation` |
-| 高階 | `forEach`、`forEachIndexed`、`map`、`mapToLong` などの型変換、`filter`、`any`、`all`、`none`、`count`、`fold`(§5.3.2)、`sumOf`(§5.3.2) |
-| 集計 | `sum`、`min`、`max`、`minOrDefault`、`maxOrDefault`、`indexOfMin`、`indexOfMax` |
+| 並べ替え | `sort`、`sortDescending`、`sort(from, to)`、`sortWith(IntComparator)`、`sortBy {}`、`sortByLong {}`、`sortByDouble {}`、`argsort`、`argsortBy {}`、`argsortByLong {}`、`argsortByDouble {}`、`reverse`、`shuffle(Random)`、`swap`、`rotate`、`fill`、`dedupe`(隣接重複の除去)、`nextPermutation` |
+| 高階 | `forEach`、`forEachIndexed`、`map`、`mapToLong` などの型変換(§5.3.3)、`filter`、`any`、`all`、`none`、`count`、`fold`(§5.3.2)、`sumOf`(§5.3.2) |
+| 集計 | `sum`(`Char` にはなし)、`min`、`max`、`minOrDefault`、`maxOrDefault`、`indexOfMin`、`indexOfMax` |
 | 反復 | `operator iterator()`(`kotlin.collections.IntIterator` を返す)、`indices`、`slice`、逆順 `forEachReversed` |
 
 #### 5.3.1 `subList`(`IntSubList`)
@@ -377,8 +377,8 @@ K はキー、V は値です。ソース上で約 100 クラスを見込みま�
 | 分類 | 操作 |
 |---|---|
 | 要素 | `[]`、`[] =`、`first`、`last`、`size`、`indices`、`in` |
-| 変更(親に反映) | `sort`、`sortDescending`、`sortWith`、`sortBy {}`、`reverse`、`shuffle`、`fill`、`swap`、`rotate`、`clear()`(親から範囲を削除) |
-| 検索・集計 | `indexOf`、`binarySearch`、`lowerBound`、`upperBound`、`sum`、`min`、`max`、`count {}`、`any {}`、`all {}` |
+| 変更(親に反映) | `sort`、`sortDescending`、`sortWith`、`sortBy {}`、`sortByLong {}`、`sortByDouble {}`、`reverse`、`shuffle`、`fill`、`swap`、`rotate`、`clear()`(親から範囲を削除) |
+| 検索・集計 | `indexOf`、`binarySearch`、`lowerBound`、`upperBound`、`sum`(`Char` にはなし)、`min`、`max`、`count {}`、`any {}`、`all {}` |
 | 反復 | `for (x in sub)`、`forEach`、`forEachIndexed` |
 | 変換 | `subList`(入れ子は親を直接指すように平坦化)、`toIntList()`、`toIntArray()`、`toList()`、`joinToString()`、`contentEquals(IntList / IntSubList)` |
 
@@ -396,6 +396,13 @@ K はキー、V は値です。ソース上で約 100 クラスを見込みま�
 
 - **`fold` は標準と同じ `fold<R>` にします。** `Int`、`Long`、`Double` の別々のオーバーロードにすると、`fold(0) { ... }` が曖昧でコンパイルエラーになります。ジェネリックでも、inline 展開後はコンパイラの最適化でボクシングが消えます。ただし**直接のループで書いたときだけ**で、`forEach` の上に書くとボクシングが残ります(Kotlin 2.2.10 で確認。`MainKt` の厳格検査で回帰を検出)。
 - **`sumOf` は `Long` を返すセレクタのみです。** `Int` と `Long` の両方を受けるには実験的機能(`@OverloadResolutionByLambdaReturnType`)が必要で、§1.4 に反します。`Int` のセレクタは `sumOf { it.toLong() }` と書きます。
+
+#### 5.3.3 全型への展開で決めたこと
+
+- **キーの型ごとに名前を分けます(`sortBy`、`sortByLong`、`sortByDouble`)。** 同じ `sortBy` でラムダの戻り値の型ごとにオーバーロードするには実験的機能(`@OverloadResolutionByLambdaReturnType`)が必要で、`sumOf` と同じく §1.4 に反します。`argsortBy` も同じです。
+- **`mapToLong` などの型変換は、組ごとに別のファイルの拡張関数にします(`IntListMapToLong` など 12 ファイル)。** 同じ型への変換は `map` です。メンバーや 1 つのファイルにまとめると、1 つの変換のために変換先のすべての型が提出に入ります。
+- **`Char` には `sum` を作りません。** `sumOf` は残します。
+- **`Double` はすべての操作で全順序です(§4.4)。** テストの基準には標準の `minOrNull` を使えません。`NaN` があると `NaN` を返すからです。
 
 ### 5.4 Deque(`IntDeque`)
 
@@ -552,8 +559,8 @@ Kotlin には `<<` がないので、`shl` / `shr` は `Int` と同じ中置関�
 | Char | `Arrays.sort`(JDK が計数ソートを使用) | なし | 自作不要 |
 | 降順 | 昇順 + 反転 | なし | 符号反転は使わない |
 | `argsort`、`sortBy { intKey }` | `(key.toLong() shl 32) or i` を Long ソート | | 比較関数不要で安定。実機で Long の `Arrays.sort` が速いので、Int キーで最速の見込み |
-| `sortBy { longKey }` | キー配列 + 添字の同時ソート、基数ソート | | 64 bit に収まらないため別実装 |
-| `sortBy { doubleKey }` | ビット変換で全順序の Long に変換 | | `-0.0` と `NaN` の順序を `Double.compare` と一致させる |
+| `sortByLong {}`、Long の `argsort` | 8 bit の LSD 基数ソートで添字を並べる(`KeySort.kt`) | | 64 bit に収まらないため別実装。比較関数が不要で安定。**未計測**で、採否は下の「ソートの採否」で決める |
+| `sortByDouble {}`、Double の `argsort` | ビット変換で全順序の Long に変換し、`sortByLong` と同じ処理 | | `-0.0` と `NaN` の順序を `Double.compare` と一致させる |
 | `sortWith(comparator)` | `IntComparator` + 反復版の pdqsort 系 / マージソート | | inline は再帰と巨大メソッドの制約があるため `fun interface` を使用 |
 | 安定ソート | 反復版マージソート | | 作業領域を再利用 |
 
@@ -712,6 +719,7 @@ JUnit 5 + kotlin-test を使います。操作列の実行器は自作して依�
 - **名前の短縮や難読化はしません。** ルールで問われるのはレビューを困難にする意図の有無で、短縮そのものが一律に禁止されているわけではありませんが、疑われる処理は避けます。空行とコメントの除去だけを任意で行います。
 - 出力サイズが上限を超えそうな場合は警告します。ソース長の上限は未確認です(§15)。
 - 手元では `import` で開発し、バンドラの出力を提出します。両方の動作の一致を E2E で確認します。
+- ライブラリの型への拡張関数は、その型のファイルが含まれているときだけ、名前の一致を依存と見なします。`sortBy` などは型ごとにあるので、名前だけで解決すると、1 つの型を使う提出に 4 型すべてが入るためです。ある型の値を持つコードは、どこかでその型の名前に到達するので、必要なものは漏れません。
 - コンテスト用は `origin` にある最新のタグ(`v` と数字だけのもの。比較は数値で行う)からバンドルします。今のチェックアウトには依存しません。手元の実行は作業ツリーのライブラリを使うので、提出に含むファイルが手元と異なるときと、タグにない名前を使っていそうなときは警告します。後者は利用者のローカル変数と区別できないので、エラーにはしません。
 - 過去問の提出では、`--allow-unpublished` で作業ツリーからバンドルできます(§9)。
 - 生成するソースは **Kotlin 2.2 の言語機能の範囲で書きます。** ジャッジの `kotlinc 2.2.10` でコンパイルされるためです。
@@ -881,8 +889,10 @@ class KTypeList { /* KType を使って実装 */ }
 
 **Phase 2 に残したもの**
 
-- `mapToLong` などの型変換(`LongList` が必要)、`sortBy { longKey }`、`sortBy { doubleKey }`
-- `argsort`、`sortBy` の実装は Int のキーを前提にしており、Long と Double の展開には別実装が必要
+どちらも全型の `List` で対応しました。
+
+- `mapToLong` などの型変換、`sortByLong`、`sortByDouble`
+- `argsort`、`sortBy` の実装が Int のキーを前提にしていた問題(`KeySort.kt` の基数ソートを追加)
 
 ### Phase 2: 線形構造とソート
 
@@ -899,22 +909,21 @@ class KTypeList { /* KType を使って実装 */ }
 | `PriorityQueue` との比較 | 完了。Dijkstra 部分が 2.3 倍速い。`modCount` を入れた後も処理時間に悪化は見られない(`docs/judge-env.md` §7) |
 | タグの作成 | 完了(`v0.2.0`)。ペアヒープをコンテストで使える |
 | 他の型の組み合わせと `Max` のペアヒープ | 完了。§5.1 の 18 クラスを 1 つのテンプレートから生成し、全ゲートを通過(分岐カバレッジ 100%、変異テスト 91%)、E2E 通過。AtCoder への提出は判断が変わらないので行っていない |
-| 全型の `List` | **未実施**(「Phase 2 に残したもの」も参照)。対象は Int、Long、Double、Char(§5.1)。試しに展開した結果(コミットしていない): Char は `K_SUM_TYPE` がなく生成の時点で失敗。Long、Double は `KTypeListSort` で 1 件ずつコンパイルエラー。コンパイラは早い段階で止まるので、エラーがこれだけとは限らない |
+| 全型の `List` | 完了。Int、Long、Double、Char の `List`、`SubList`、変換、ソートと、型変換 12 ファイルを生成し、全ゲートを通過(分岐カバレッジ 100%、変異テスト 93%)、E2E 通過。決めたことは §5.3.3。テンプレートは Int 版として `check` でコンパイルされる(§11)。実際の問題での提出は、判断が変わらないので行っていない |
 | `Deque`、単純ヒープ、インデックス付きヒープ、配列拡張 | **未実施** |
 | ソートの実測と採否(§6)、argsort の代表問題 | **未実施** |
 
 **積んである作業**
 
-どれも未着手です。順序と着手の時期は所有者が決めます。次は全型の `List` の予定です(2026-11-07 に決定)。AtCoder での手作業が必要なものは、着手するときに手順を具体的に示して依頼します。
+どれも未着手です。順序と着手の時期は所有者が決めます。AtCoder での手作業が必要なものは、着手するときに手順を具体的に示して依頼します。
 
 | 作業 | 内容 | 手作業 |
 |---|---|---|
 | `nextCapacity` の拡張率の決定 | 暫定で 1.5 倍のまま | コードテスト(`e2e/experiments/GrowthRate.kt`) |
-| 全型の `List` | 試しに展開した結果は上の表のとおり。「Phase 2 に残したもの」も含む。あわせて、`KTypeList` と `KTypeSubList` のテンプレートが Int 版のままではコンパイルできない問題(`nextKType`)を直し、§11 の記述と揃える。**`Char` には `sum` を作らず、`K_NUMERIC` で分ける**(`sumOf` は残す)。テストの数値前提が `Char` で通るかは、展開して確かめる | なし |
 | `Deque`、単純ヒープ、インデックス付きヒープ、配列拡張 | §5.4、§5.5、§5.8 | なし |
 | ソートの採否と argsort の代表問題 | §6。Phase 2 の完了条件 | 提出 |
 | メモリの目標の確認 | §15。JVM の基礎分を差し引いて、`java.util` 比 1/3 以下を満たすかを確かめる | コードテスト |
-| 変異テストの基準の見直し | 90.69% と基準に近い。同じ等価変異がクラスの数だけ数えられるので、§7.1 の「代表型で 90% 以上」に対象を絞るか、確認済みの生存変異との差分を見る形にするかを決める | なし |
+| 変異テストの基準の見直し | 全型の `List` の後で 93.26%。ヒープなどの等価変異が多いテンプレートが増えると基準に近づく。同じ等価変異がクラスの数だけ数えられるので、§7.1 の「代表型で 90% 以上」に対象を絞るか、確認済みの生存変異との差分を見る形にするかを決める | なし |
 | コンパイル時間とソース長の上限の調査 | 後回し(2026-11-07 に決定、理由は §15)。Phase 4 でツリーを入れるときか、実際の提出が大きくなったときに行う | コードテスト(`e2e/experiments/size-probe.py`) |
 
 ### Phase 3: ハッシュ
@@ -1067,7 +1076,7 @@ AVL / WBT と B+ 木の比較実験(Int キーのみで実装)、方式の決定
 **コンパイル時間とソース長の上限を後回しにした理由(2026-11-07)**
 
 - バンドラは使うクラスだけを結合するので、全型の `List` を追加しても、使わない提出は大きくならない。
-- 今の E2E で最大の貼り付けコードは約 46 KB。ペアヒープの貼り付け提出は ABC 340 D で AC している(約 10 KB)。
+- 実際の問題に近い E2E の貼り付けコードは約 10〜47 KB。ペアヒープの貼り付け提出は ABC 340 D で AC している(約 10 KB)。4 型と変換を 1 つの提出で使う最悪に近いサンプル(`e2e/usage/lists-other-types`)は約 163 KB。
 - 問題になるとすれば、1 つの提出で大きなクラスをいくつも使う場合で、将来の `TreeMap` などが該当しそう。上限がわからなくても、今の作業は変わらない。
 - ルールによると CE にはペナルティがつかない。ただし、上限を超えたときに CE 扱いになるかは不明。
 

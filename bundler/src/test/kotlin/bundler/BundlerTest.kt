@@ -62,6 +62,46 @@ class BundlerTest {
     }
 
     @Test
+    fun anExtensionOnALibraryTypeNeedsThatType() {
+        val intType = lib("IntL.kt", "class IntL\nfun intLOf() = IntL()")
+        val longType = lib("LongL.kt", "class LongL\nfun longLOf() = LongL()")
+        val intSort = lib("IntLSort.kt", "fun IntL.sortBy() {}")
+        val longSort = lib("LongLSort.kt", "fun LongL.sortBy() {}")
+        val all = listOf(intType, longType, intSort, longSort)
+        val one = Bundler.bundle(main("fun main() { intLOf().sortBy() }"), all, options)
+        assertEquals(listOf("IntL.kt", "IntLSort.kt"), one.includedFiles)
+        val both = Bundler.bundle(main("fun main() { intLOf().sortBy(); longLOf() }"), all, options)
+        assertEquals(listOf("IntL.kt", "IntLSort.kt", "LongL.kt", "LongLSort.kt"), both.includedFiles)
+        assertEquals(emptyList(), Bundler.bundle(main("fun main() { listOf(1).sortBy() }"), all, options).includedFiles)
+    }
+
+    @Test
+    fun anExtensionThatReturnsAnotherTypeBringsThatTypesExtensions() {
+        val intType = lib("IntL.kt", "class IntL")
+        val longType = lib("LongL.kt", "class LongL")
+        val convert = lib("IntLToLong.kt", "fun IntL.toLong() = LongL()")
+        val intSort = lib("IntLSort.kt", "fun IntL.sortBy() {}")
+        val longSort = lib("LongLSort.kt", "fun LongL.sortBy() {}")
+        val result = Bundler.bundle(main("fun main() { IntL().toLong().sortBy() }"), listOf(longSort, intSort, convert, longType, intType), options)
+        assertEquals(listOf("IntL.kt", "IntLSort.kt", "IntLToLong.kt", "LongL.kt", "LongLSort.kt"), result.includedFiles)
+    }
+
+    @Test
+    fun anExtensionOnAnOutsideTypeNeedsOnlyItsName() {
+        val generic = lib("G.kt", "fun Iterable<Int>.toL() = 1\nfun <T> T.ext() = 2")
+        assertEquals(listOf("G.kt"), Bundler.bundle(main("fun main() { listOf(1).toL() }"), listOf(generic), options).includedFiles)
+        assertEquals(listOf("G.kt"), Bundler.bundle(main("fun main() { 1.ext() }"), listOf(generic), options).includedFiles)
+    }
+
+    @Test
+    fun aNullableReceiverCountsAsItsType() {
+        val owner = lib("N.kt", "class N")
+        val extension = lib("NExt.kt", "fun N?.orNew() = this")
+        assertEquals(emptyList(), Bundler.bundle(main("fun main() { x.orNew() }"), listOf(owner, extension), options).includedFiles)
+        assertEquals(listOf("N.kt", "NExt.kt"), Bundler.bundle(main("fun main() { N().orNew() }"), listOf(owner, extension), options).includedFiles)
+    }
+
+    @Test
     fun aFileThatDeclaresBothStillDoesNotDependOnItself() {
         val both = lib("B.kt", "class B { fun f() {} }\nfun f(x: Int) {}")
         val user = lib("U.kt", "class U { fun g() = f(1) }")

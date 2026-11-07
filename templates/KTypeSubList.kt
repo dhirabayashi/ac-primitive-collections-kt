@@ -87,10 +87,12 @@ class KTypeSubList @PublishedApi internal constructor(
         return parent.upperBound(value, offset, offset + length) - offset
     }
 
+    //#if K_NUMERIC
     fun sum(): K_SUM_TYPE {
         checkParent()
         return parent.sum(offset, offset + length)
     }
+    //#endif
 
     fun min(): KType {
         checkParent()
@@ -121,12 +123,25 @@ class KTypeSubList @PublishedApi internal constructor(
     inline fun sortBy(selector: (KType) -> Int) {
         val keys = LongArray(size)
         forEachIndexed { index, value -> keys[index] = packKeyAndIndex(selector(value), index) }
-        applySortedKeys(keys)
+        applySortedIndices(sortedIndices(keys))
+    }
+
+    /** Sorts stably by a Long key without a comparator. */
+    inline fun sortByLong(selector: (KType) -> Long) {
+        val keys = LongArray(size)
+        forEachIndexed { index, value -> keys[index] = selector(value) }
+        applySortedIndices(sortedIndicesByKey(keys))
+    }
+
+    /** Sorts stably by a Double key without a comparator, in the order of `Double.compareTo`. */
+    inline fun sortByDouble(selector: (KType) -> Double) {
+        val keys = LongArray(size)
+        forEachIndexed { index, value -> keys[index] = totalOrderKey(selector(value)) }
+        applySortedIndices(sortedIndicesByKey(keys))
     }
 
     @PublishedApi
-    internal fun applySortedKeys(keys: LongArray) {
-        val indices = sortedIndices(keys)
+    internal fun applySortedIndices(indices: IntArray) {
         val source = toKTypeArray()
         var i = 0
         while (i < indices.size) {

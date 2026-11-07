@@ -27,11 +27,25 @@ fun IntList.sortWith(comparator: IntComparator, from: Int, to: Int) {
 inline fun IntList.sortBy(selector: (Int) -> Int) {
     val keys = LongArray(length)
     forEachIndexed { index, value -> keys[index] = packKeyAndIndex(selector(value), index) }
-    applySortedKeys(keys)
+    applySortedIndices(sortedIndices(keys))
+}
+
+/** Sorts stably by a Long key without a comparator. */
+inline fun IntList.sortByLong(selector: (Int) -> Long) {
+    val keys = LongArray(length)
+    forEachIndexed { index, value -> keys[index] = selector(value) }
+    applySortedIndices(sortedIndicesByKey(keys))
+}
+
+/** Sorts stably by a Double key without a comparator, in the order of `Double.compareTo`. */
+inline fun IntList.sortByDouble(selector: (Int) -> Double) {
+    val keys = LongArray(length)
+    forEachIndexed { index, value -> keys[index] = totalOrderKey(selector(value)) }
+    applySortedIndices(sortedIndicesByKey(keys))
 }
 
 /** Returns the indices that sort the list, keeping equal elements in their original order. */
-fun IntList.argsort(): IntArray = argsortBy { it }
+fun IntList.argsort(): IntArray = this.argsortBy { it }
 
 /** Returns the indices that sort the list by an Int key, keeping ties in their original order. */
 inline fun IntList.argsortBy(selector: (Int) -> Int): IntArray {
@@ -40,9 +54,22 @@ inline fun IntList.argsortBy(selector: (Int) -> Int): IntArray {
     return sortedIndices(keys)
 }
 
+/** Returns the indices that sort the list by a Long key, keeping ties in their original order. */
+inline fun IntList.argsortByLong(selector: (Int) -> Long): IntArray {
+    val keys = LongArray(length)
+    forEachIndexed { index, value -> keys[index] = selector(value) }
+    return sortedIndicesByKey(keys)
+}
+
+/** Returns the indices that sort the list by a Double key in the order of `Double.compareTo`, keeping ties in their original order. */
+inline fun IntList.argsortByDouble(selector: (Int) -> Double): IntArray {
+    val keys = LongArray(length)
+    forEachIndexed { index, value -> keys[index] = totalOrderKey(selector(value)) }
+    return sortedIndicesByKey(keys)
+}
+
 @PublishedApi
-internal fun IntList.applySortedKeys(keys: LongArray) {
-    val indices = sortedIndices(keys)
+internal fun IntList.applySortedIndices(indices: IntArray) {
     val source = toIntArray()
     var i = 0
     while (i < indices.size) {

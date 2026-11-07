@@ -66,9 +66,19 @@ class KTypeSubListTest {
                     view.sortWith { x, y -> y.compareTo(x) }
                     modelView.sortWith { x, y -> y.compareTo(x) }
                 }
-                8 -> {
-                    view.sortBy { it.toInt() % 3 }
-                    modelView.sortBy { it.toInt() % 3 }
+                8 -> when (Math.floorMod(op.b, 3)) {
+                    0 -> {
+                        view.sortBy { K_TO_INT(it) % 3 }
+                        modelView.sortBy { K_TO_INT(it) % 3 }
+                    }
+                    1 -> {
+                        view.sortByLong { K_TO_INT(it) % 3 * Long.MAX_VALUE }
+                        modelView.sortBy { K_TO_INT(it) % 3 * Long.MAX_VALUE }
+                    }
+                    else -> {
+                        view.sortByDouble { K_TO_INT(it) % 3 / 0.0 }
+                        modelView.sortBy { K_TO_INT(it) % 3 / 0.0 }
+                    }
                 }
                 9 -> {
                     val from = minOf(i, j)
@@ -97,9 +107,11 @@ class KTypeSubListTest {
             if (modelView.isNotEmpty()) {
                 assertEquals(modelView.first(), view.first())
                 assertEquals(modelView.last(), view.last())
-                assertEquals(modelView.min(), view.min())
-                assertEquals(modelView.max(), view.max())
+                assertEquals(modelView.minWith(naturalOrder()), view.min())
+                assertEquals(modelView.maxWith(naturalOrder()), view.max())
+                //#if K_NUMERIC
                 assertEquals(modelView.sumOf { K_TO_SUM(it) }, view.sum())
+                //#endif
             }
         }
     }
@@ -157,7 +169,9 @@ class KTypeSubListTest {
         assertFailsWith<NoSuchElementException> { empty.last() }
         assertFailsWith<NoSuchElementException> { empty.min() }
         assertFailsWith<NoSuchElementException> { empty.max() }
+        //#if K_NUMERIC
         assertEquals(K_SUM_ZERO, empty.sum())
+        //#endif
         assertEquals(-1, empty.lastIndex)
         assertEquals("[]", empty.toString())
         empty.rotate(3)
@@ -171,8 +185,12 @@ class KTypeSubListTest {
         val list = listOfInts(1, 2, 3)
         val uses = listOf<(KTypeSubList) -> Unit>(
             { it.size }, { it[0] }, { it[0] = v(1) }, { it.first() }, { it.last() }, { it.indexOf(v(1)) },
-            { it.binarySearch(v(1)) }, { it.lowerBound(v(1)) }, { it.upperBound(v(1)) }, { it.sum() }, { it.min() },
+            { it.binarySearch(v(1)) }, { it.lowerBound(v(1)) }, { it.upperBound(v(1)) }, { it.min() },
+            //#if K_NUMERIC
+            { it.sum() },
+            //#endif
             { it.max() }, { it.sort() }, { it.sortDescending() }, { it.sortWith { _, _ -> 0 } }, { it.sortBy { 0 } },
+            { it.sortByLong { 0L } }, { it.sortByDouble { 0.0 } },
             { it.reverse() }, { it.shuffle() }, { it.fill(v(0)) }, { it.swap(0, 0) }, { it.rotate(1) }, { it.clear() },
             { it.forEach { } }, { it.iterator().hasNext() }, { it.subList(0, 0) }, { it.toKTypeList() },
             { it.toKTypeArray() }, { it.contentEquals(KTypeList()) }, { it.contentEquals(it) },
@@ -257,7 +275,11 @@ class KTypeSubListTest {
         assertEquals(ints(9, 2, 1, 3, 9), list.toList())
         view.sortWith { a, b -> a.compareTo(b) }
         assertEquals(ints(9, 1, 2, 3, 9), list.toList())
-        view.sortBy { -it.toInt() }
+        view.sortBy { -K_TO_INT(it) }
+        assertEquals(ints(9, 3, 2, 1, 9), list.toList())
+        view.sortByLong { K_TO_INT(it) * (1L shl 40) }
+        assertEquals(ints(9, 1, 2, 3, 9), list.toList())
+        view.sortByDouble { -K_TO_INT(it).toDouble() }
         assertEquals(ints(9, 3, 2, 1, 9), list.toList())
         view.shuffle(Random(1))
         assertEquals(ints(1, 2, 3), view.toList().sorted())
@@ -290,14 +312,16 @@ class KTypeSubListTest {
         view.forEach { seen += it }
         assertEquals(ints(1, 2, 3), seen)
         val indexed = ArrayList<Int>()
-        view.forEachIndexed { i, x -> indexed += i + x.toInt() }
+        view.forEachIndexed { i, x -> indexed += i + K_TO_INT(x) }
         assertEquals(listOf(1, 3, 5), indexed)
-        assertEquals(2, view.count { it.toInt() > 1 })
+        assertEquals(2, view.count { K_TO_INT(it) > 1 })
         assertTrue(view.any { it == v(3) })
         assertFalse(view.any { it == v(0) })
-        assertTrue(view.all { it.toInt() > 0 })
-        assertFalse(view.all { it.toInt() > 1 })
+        assertTrue(view.all { K_TO_INT(it) > 0 })
+        assertFalse(view.all { K_TO_INT(it) > 1 })
+        //#if K_NUMERIC
         assertEquals(K_TO_SUM(v(6)), view.sum())
+        //#endif
         assertEquals(v(1), view.min())
         assertEquals(v(3), view.max())
         assertEquals(v(1), view.first())
@@ -321,7 +345,7 @@ class KTypeSubListTest {
         assertEquals(view.hashCode(), listOfInts(1, 2).hashCode())
         assertNotEquals(view, list.subList(0, 2))
         assertFalse(view.equals(listOfInts(1, 2)))
-        assertEquals("[1, 2]", view.toString())
-        assertEquals("<1|2>", view.joinToString("|", "<", ">"))
+        assertEquals("[${v(1)}, ${v(2)}]", view.toString())
+        assertEquals("<${v(1)}|${v(2)}>", view.joinToString("|", "<", ">"))
     }
 }

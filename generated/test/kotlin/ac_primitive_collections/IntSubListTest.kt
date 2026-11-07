@@ -69,9 +69,19 @@ class IntSubListTest {
                     view.sortWith { x, y -> y.compareTo(x) }
                     modelView.sortWith { x, y -> y.compareTo(x) }
                 }
-                8 -> {
-                    view.sortBy { it.toInt() % 3 }
-                    modelView.sortBy { it.toInt() % 3 }
+                8 -> when (Math.floorMod(op.b, 3)) {
+                    0 -> {
+                        view.sortBy { it % 3 }
+                        modelView.sortBy { it % 3 }
+                    }
+                    1 -> {
+                        view.sortByLong { it % 3 * Long.MAX_VALUE }
+                        modelView.sortBy { it % 3 * Long.MAX_VALUE }
+                    }
+                    else -> {
+                        view.sortByDouble { it % 3 / 0.0 }
+                        modelView.sortBy { it % 3 / 0.0 }
+                    }
                 }
                 9 -> {
                     val from = minOf(i, j)
@@ -100,8 +110,8 @@ class IntSubListTest {
             if (modelView.isNotEmpty()) {
                 assertEquals(modelView.first(), view.first())
                 assertEquals(modelView.last(), view.last())
-                assertEquals(modelView.min(), view.min())
-                assertEquals(modelView.max(), view.max())
+                assertEquals(modelView.minWith(naturalOrder()), view.min())
+                assertEquals(modelView.maxWith(naturalOrder()), view.max())
                 assertEquals(modelView.sumOf { it.toLong() }, view.sum())
             }
         }
@@ -174,8 +184,10 @@ class IntSubListTest {
         val list = listOfInts(1, 2, 3)
         val uses = listOf<(IntSubList) -> Unit>(
             { it.size }, { it[0] }, { it[0] = v(1) }, { it.first() }, { it.last() }, { it.indexOf(v(1)) },
-            { it.binarySearch(v(1)) }, { it.lowerBound(v(1)) }, { it.upperBound(v(1)) }, { it.sum() }, { it.min() },
+            { it.binarySearch(v(1)) }, { it.lowerBound(v(1)) }, { it.upperBound(v(1)) }, { it.min() },
+            { it.sum() },
             { it.max() }, { it.sort() }, { it.sortDescending() }, { it.sortWith { _, _ -> 0 } }, { it.sortBy { 0 } },
+            { it.sortByLong { 0L } }, { it.sortByDouble { 0.0 } },
             { it.reverse() }, { it.shuffle() }, { it.fill(v(0)) }, { it.swap(0, 0) }, { it.rotate(1) }, { it.clear() },
             { it.forEach { } }, { it.iterator().hasNext() }, { it.subList(0, 0) }, { it.toIntList() },
             { it.toIntArray() }, { it.contentEquals(IntList()) }, { it.contentEquals(it) },
@@ -260,7 +272,11 @@ class IntSubListTest {
         assertEquals(ints(9, 2, 1, 3, 9), list.toList())
         view.sortWith { a, b -> a.compareTo(b) }
         assertEquals(ints(9, 1, 2, 3, 9), list.toList())
-        view.sortBy { -it.toInt() }
+        view.sortBy { -it }
+        assertEquals(ints(9, 3, 2, 1, 9), list.toList())
+        view.sortByLong { it * (1L shl 40) }
+        assertEquals(ints(9, 1, 2, 3, 9), list.toList())
+        view.sortByDouble { -it.toDouble() }
         assertEquals(ints(9, 3, 2, 1, 9), list.toList())
         view.shuffle(Random(1))
         assertEquals(ints(1, 2, 3), view.toList().sorted())
@@ -293,13 +309,13 @@ class IntSubListTest {
         view.forEach { seen += it }
         assertEquals(ints(1, 2, 3), seen)
         val indexed = ArrayList<Int>()
-        view.forEachIndexed { i, x -> indexed += i + x.toInt() }
+        view.forEachIndexed { i, x -> indexed += i + x }
         assertEquals(listOf(1, 3, 5), indexed)
-        assertEquals(2, view.count { it.toInt() > 1 })
+        assertEquals(2, view.count { it > 1 })
         assertTrue(view.any { it == v(3) })
         assertFalse(view.any { it == v(0) })
-        assertTrue(view.all { it.toInt() > 0 })
-        assertFalse(view.all { it.toInt() > 1 })
+        assertTrue(view.all { it > 0 })
+        assertFalse(view.all { it > 1 })
         assertEquals(v(6).toLong(), view.sum())
         assertEquals(v(1), view.min())
         assertEquals(v(3), view.max())
@@ -324,7 +340,7 @@ class IntSubListTest {
         assertEquals(view.hashCode(), listOfInts(1, 2).hashCode())
         assertNotEquals(view, list.subList(0, 2))
         assertFalse(view.equals(listOfInts(1, 2)))
-        assertEquals("[1, 2]", view.toString())
-        assertEquals("<1|2>", view.joinToString("|", "<", ">"))
+        assertEquals("[${v(1)}, ${v(2)}]", view.toString())
+        assertEquals("<${v(1)}|${v(2)}>", view.joinToString("|", "<", ">"))
     }
 }

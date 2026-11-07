@@ -459,7 +459,7 @@ class KTypeList @PublishedApi internal constructor(
         }
     }
 
-    /** Returns a same-typed list. Conversions to other element types arrive with those types. */
+    /** Returns a same-typed list. Conversions to other element types are `mapToLong` and so on. */
     inline fun map(transform: (KType) -> KType): KTypeList {
         val result = KTypeList(length)
         forEach { result.add(transform(it)) }
@@ -516,6 +516,7 @@ class KTypeList @PublishedApi internal constructor(
         return result
     }
 
+    //#if K_NUMERIC
     fun sum(): K_SUM_TYPE = sum(0, length)
 
     /** Does not overflow for Int, because the result is a Long. A Long sum wraps around. */
@@ -530,6 +531,7 @@ class KTypeList @PublishedApi internal constructor(
         }
         return result
     }
+    //#endif
 
     fun min(): KType = min(0, length)
 

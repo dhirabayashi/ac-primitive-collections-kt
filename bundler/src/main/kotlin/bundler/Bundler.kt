@@ -39,28 +39,8 @@ object Bundler {
     fun bundle(main: SourceFile, library: List<SourceFile>, options: BundleOptions): BundleResult {
         checkLibrary(library).takeIf { it.isNotEmpty() }?.let { throw BundleException(it.joinToString("\n")) }
 
-        val owners = HashMap<String, MutableList<SourceFile>>()
-        for (file in library) {
-            for (declaration in file.declarations) owners.getOrPut(declaration.name) { ArrayList() } += file
-        }
         checkUserImports(main)
-        val usesLibrary = main.imports.any { isLibraryImport(it) }
-        val included = LinkedHashSet<SourceFile>()
-        if (usesLibrary) {
-            val pending = ArrayDeque<SourceFile>()
-            fun visit(from: SourceFile) {
-                // Only the library's own files have members worth skipping: user code may call the extension.
-                val members = if (from === main) emptySet() else from.memberFunctions
-                for (identifier in from.identifiers) {
-                    if (identifier in members) continue
-                    for (owner in owners[identifier].orEmpty()) {
-                        if (owner !== from && included.add(owner)) pending += owner
-                    }
-                }
-            }
-            visit(main)
-            while (pending.isNotEmpty()) visit(pending.removeFirst())
-        }
+        val included = if (main.imports.any { isLibraryImport(it) }) findIncluded(main, library) else emptySet()
         val ordered = included.sortedBy { it.name }
         checkConflicts(main, ordered)
         checkInternals(main, library)
@@ -72,6 +52,38 @@ object Bundler {
             warnings += "The output is $bytes bytes, above the ${options.sizeWarningBytes}-byte warning threshold."
         }
         return BundleResult(source, ordered.map { it.name }, warnings)
+    }
+
+    /**
+     * Follows names to a fixed point. Names alone would pull in every element type, because `sortBy` and
+     * others exist once per type. So an extension on a library type counts only once that type is included:
+     * code that holds a value of the type has to reach the type's file through some name.
+     */
+    private fun findIncluded(main: SourceFile, library: List<SourceFile>): Set<SourceFile> {
+        val typeOwners = HashMap<String, SourceFile>()
+        for (file in library) {
+            for (declaration in file.declarations) if (declaration.isType) typeOwners[declaration.name] = file
+        }
+        val included = LinkedHashSet<SourceFile>()
+        fun isReachable(declaration: Declaration): Boolean {
+            val receiver = declaration.receiver?.substringBefore('<')?.removeSuffix("?") ?: return true
+            val owner = typeOwners[receiver] ?: return true
+            return owner in included
+        }
+        val mentioned = HashSet(main.identifiers)
+        var changed = true
+        while (changed) {
+            changed = false
+            for (file in library) {
+                if (file !in included && file.declarations.any { it.name in mentioned && isReachable(it) }) {
+                    included += file
+                    // A call by a member's name in the file reaches the member, not a same-named extension elsewhere.
+                    mentioned += file.identifiers - file.memberFunctions
+                    changed = true
+                }
+            }
+        }
+        return included
     }
 
     fun isLibraryImport(path: String) = path == "$LIBRARY_PACKAGE.*" || path.startsWith("$LIBRARY_PACKAGE.")
