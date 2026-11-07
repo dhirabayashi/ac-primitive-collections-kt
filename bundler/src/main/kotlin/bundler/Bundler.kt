@@ -43,9 +43,8 @@ object Bundler {
         val included = if (main.imports.any { isLibraryImport(it) }) findIncluded(main, library) else emptySet()
         val ordered = included.sortedBy { it.name }
         checkConflicts(main, ordered)
-        checkInternals(main, library)
 
-        val warnings = userShadowingWarnings(main, ordered).toMutableList()
+        val warnings = (userShadowingWarnings(main, ordered) + internalUseWarnings(main, library)).toMutableList()
         val source = render(main, ordered, options)
         val bytes = source.toByteArray().size
         if (bytes > options.sizeWarningBytes) {
@@ -106,16 +105,19 @@ object Bundler {
         if (problems.isNotEmpty()) throw BundleException(problems.joinToString("\n"))
     }
 
-    /** Pasted code can reach `internal` declarations that `import` cannot, so it would break at install time. */
-    private fun checkInternals(main: SourceFile, library: List<SourceFile>) {
+    /**
+     * Pasted code can reach `internal` declarations that `import` cannot, so it would break at install time.
+     * Only a warning: the scan cannot tell these from a user's local variable, and pasted code compiles either way.
+     */
+    private fun internalUseWarnings(main: SourceFile, library: List<SourceFile>): List<String> {
+        if (main.imports.none(::isLibraryImport)) return emptyList()
         val userDeclared = main.declarations.mapTo(HashSet()) { it.name }
         val internalNames = library.flatMap { file ->
             file.declarations.filter { it.visibility != Declaration.Visibility.PUBLIC }.map { it.name }
         }
         val used = internalNames.filter { it in main.identifiers && it !in userDeclared }.distinct().sorted()
-        if (used.isNotEmpty()) {
-            throw BundleException("These are internal to the library, so the code would not compile with import: ${used.joinToString()}")
-        }
+        if (used.isEmpty()) return emptyList()
+        return listOf("These names are internal to the library: ${used.joinToString()}. This is fine for your own local variables. Calling the library's would compile when pasted, but not with import.")
     }
 
     /** Library code pasted next to user code resolves names against the user's declarations too. */

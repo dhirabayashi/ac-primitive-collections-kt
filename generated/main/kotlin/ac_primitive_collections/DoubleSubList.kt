@@ -135,11 +135,7 @@ class DoubleSubList @PublishedApi internal constructor(
     }
 
     /** Sorts stably by a Double key without a comparator, in the order of `Double.compareTo`. */
-    inline fun sortByDouble(selector: (Double) -> Double) {
-        val keys = LongArray(size)
-        forEachIndexed { index, value -> keys[index] = totalOrderKey(selector(value)) }
-        applySortedIndices(sortedIndicesByKey(keys))
-    }
+    inline fun sortByDouble(selector: (Double) -> Double) = sortByLong { totalOrderKey(selector(it)) }
 
     @PublishedApi
     internal fun applySortedIndices(indices: IntArray) {
@@ -186,18 +182,23 @@ class DoubleSubList @PublishedApi internal constructor(
         expectedModCount = parent.modCount
     }
 
+    /** [clear] moves expectedModCount along with the parent, so comparing it is what catches a clear from [action]. */
     inline fun forEach(action: (Double) -> Unit) {
+        val expected = expectedModCount
         var i = 0
         while (i < size) {
             action(parent.elements[offset + i])
+            if (expectedModCount != expected) throwConcurrentModification()
             i++
         }
     }
 
     inline fun forEachIndexed(action: (index: Int, value: Double) -> Unit) {
+        val expected = expectedModCount
         var i = 0
         while (i < size) {
             action(i, parent.elements[offset + i])
+            if (expectedModCount != expected) throwConcurrentModification()
             i++
         }
     }
@@ -221,11 +222,18 @@ class DoubleSubList @PublishedApi internal constructor(
     operator fun iterator(): DoubleIterator = ViewIterator(this)
 
     private class ViewIterator(private val view: DoubleSubList) : DoubleIterator() {
+        private val expected = view.expectedModCount
         private var next = 0
 
-        override fun hasNext(): Boolean = next < view.size
+        override fun hasNext(): Boolean {
+            if (view.expectedModCount != expected) throwConcurrentModification()
+            return next < view.size
+        }
 
-        override fun nextDouble(): Double = view[next++]
+        override fun nextDouble(): Double {
+            if (view.expectedModCount != expected) throwConcurrentModification()
+            return view[next++]
+        }
     }
 
     /** Nested views point at the parent directly, so they do not add a level of indirection. */

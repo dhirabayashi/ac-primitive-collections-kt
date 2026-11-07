@@ -155,11 +155,27 @@ class BundlerTest {
     }
 
     @Test
-    fun rejectsInternalUse() {
-        val failure = assertFailsWith<BundleException> {
-            Bundler.bundle(main("fun main() { helper(); IntList() }"), library, options)
-        }
-        assertTrue("helper" in failure.message!!)
+    fun warnsAboutInternalUse() {
+        val result = Bundler.bundle(main("fun main() { helper(); IntList() }"), library, options)
+        assertTrue("helper" in result.warnings.single(), result.warnings.toString())
+    }
+
+    /** The scan cannot tell a local variable from the internal function, so it must not stop a submission. */
+    @Test
+    fun aLocalVariableNamedLikeAnInternalDoesNotStopTheBundle() {
+        val result = Bundler.bundle(main("fun main() { val helper = 1; println(IntList().add(helper)) }"), library, options)
+        assertTrue("helper" in result.warnings.single(), result.warnings.toString())
+        assertTrue("val helper = 1" in result.source)
+    }
+
+    @Test
+    fun codeWithoutTheLibraryImportGetsNoInternalWarning() {
+        assertEquals(emptyList(), Bundler.bundle(main("fun main() { val helper = 1 }", ""), library, options).warnings)
+    }
+
+    @Test
+    fun aTopLevelNameOfTheUsersOwnIsNotInternalUse() {
+        assertEquals(emptyList(), Bundler.bundle(main("val answer = 1\nfun main() { println(answer) }"), library, options).warnings)
     }
 
     @Test

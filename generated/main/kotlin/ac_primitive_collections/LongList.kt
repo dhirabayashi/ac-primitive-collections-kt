@@ -453,7 +453,11 @@ class LongList @PublishedApi internal constructor(
         private val expected = list.modCount
         private var next = 0
 
-        override fun hasNext(): Boolean = next < list.length
+        /** Checks here too: after a clear, the size alone would end the loop as if it had finished. */
+        override fun hasNext(): Boolean {
+            if (list.modCount != expected) throwConcurrentModification()
+            return next < list.length
+        }
 
         override fun nextLong(): Long {
             if (list.modCount != expected) throwConcurrentModification()

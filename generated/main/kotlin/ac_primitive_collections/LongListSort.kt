@@ -38,11 +38,7 @@ inline fun LongList.sortByLong(selector: (Long) -> Long) {
 }
 
 /** Sorts stably by a Double key without a comparator, in the order of `Double.compareTo`. */
-inline fun LongList.sortByDouble(selector: (Long) -> Double) {
-    val keys = LongArray(length)
-    forEachIndexed { index, value -> keys[index] = totalOrderKey(selector(value)) }
-    applySortedIndices(sortedIndicesByKey(keys))
-}
+inline fun LongList.sortByDouble(selector: (Long) -> Double) = sortByLong { totalOrderKey(selector(it)) }
 
 /** Returns the indices that sort the list, keeping equal elements in their original order. */
 fun LongList.argsort(): IntArray = this.argsortByLong { it }
@@ -62,11 +58,7 @@ inline fun LongList.argsortByLong(selector: (Long) -> Long): IntArray {
 }
 
 /** Returns the indices that sort the list by a Double key in the order of `Double.compareTo`, keeping ties in their original order. */
-inline fun LongList.argsortByDouble(selector: (Long) -> Double): IntArray {
-    val keys = LongArray(length)
-    forEachIndexed { index, value -> keys[index] = totalOrderKey(selector(value)) }
-    return sortedIndicesByKey(keys)
-}
+inline fun LongList.argsortByDouble(selector: (Long) -> Double): IntArray = argsortByLong { totalOrderKey(selector(it)) }
 
 @PublishedApi
 internal fun LongList.applySortedIndices(indices: IntArray) {

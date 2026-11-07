@@ -131,11 +131,7 @@ class CharSubList @PublishedApi internal constructor(
     }
 
     /** Sorts stably by a Double key without a comparator, in the order of `Double.compareTo`. */
-    inline fun sortByDouble(selector: (Char) -> Double) {
-        val keys = LongArray(size)
-        forEachIndexed { index, value -> keys[index] = totalOrderKey(selector(value)) }
-        applySortedIndices(sortedIndicesByKey(keys))
-    }
+    inline fun sortByDouble(selector: (Char) -> Double) = sortByLong { totalOrderKey(selector(it)) }
 
     @PublishedApi
     internal fun applySortedIndices(indices: IntArray) {
@@ -182,18 +178,23 @@ class CharSubList @PublishedApi internal constructor(
         expectedModCount = parent.modCount
     }
 
+    /** [clear] moves expectedModCount along with the parent, so comparing it is what catches a clear from [action]. */
     inline fun forEach(action: (Char) -> Unit) {
+        val expected = expectedModCount
         var i = 0
         while (i < size) {
             action(parent.elements[offset + i])
+            if (expectedModCount != expected) throwConcurrentModification()
             i++
         }
     }
 
     inline fun forEachIndexed(action: (index: Int, value: Char) -> Unit) {
+        val expected = expectedModCount
         var i = 0
         while (i < size) {
             action(i, parent.elements[offset + i])
+            if (expectedModCount != expected) throwConcurrentModification()
             i++
         }
     }
@@ -217,11 +218,18 @@ class CharSubList @PublishedApi internal constructor(
     operator fun iterator(): CharIterator = ViewIterator(this)
 
     private class ViewIterator(private val view: CharSubList) : CharIterator() {
+        private val expected = view.expectedModCount
         private var next = 0
 
-        override fun hasNext(): Boolean = next < view.size
+        override fun hasNext(): Boolean {
+            if (view.expectedModCount != expected) throwConcurrentModification()
+            return next < view.size
+        }
 
-        override fun nextChar(): Char = view[next++]
+        override fun nextChar(): Char {
+            if (view.expectedModCount != expected) throwConcurrentModification()
+            return view[next++]
+        }
     }
 
     /** Nested views point at the parent directly, so they do not add a level of indirection. */

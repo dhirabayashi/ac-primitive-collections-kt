@@ -32,5 +32,3 @@ inline fun V_CAST(x: VStored): VType = x
 inline fun K_HASH(x: KType): Int = x.hashCode()
 inline fun K_TO_SUM(x: KType): K_SUM_TYPE = x.toLong()
 fun K_ARGSORT(list: KTypeList): IntArray = list.argsortBy { it }
-inline fun K_TO_INT(x: KType): Int = x
-fun K_RANDOM(random: kotlin.random.Random): KType = random.nextInt()

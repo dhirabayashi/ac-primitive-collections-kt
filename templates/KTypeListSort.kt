@@ -35,11 +35,7 @@ inline fun KTypeList.sortByLong(selector: (KType) -> Long) {
 }
 
 /** Sorts stably by a Double key without a comparator, in the order of `Double.compareTo`. */
-inline fun KTypeList.sortByDouble(selector: (KType) -> Double) {
-    val keys = LongArray(length)
-    forEachIndexed { index, value -> keys[index] = totalOrderKey(selector(value)) }
-    applySortedIndices(sortedIndicesByKey(keys))
-}
+inline fun KTypeList.sortByDouble(selector: (KType) -> Double) = sortByLong { totalOrderKey(selector(it)) }
 
 /** Returns the indices that sort the list, keeping equal elements in their original order. */
 fun KTypeList.argsort(): IntArray = K_ARGSORT(this)
@@ -59,11 +55,7 @@ inline fun KTypeList.argsortByLong(selector: (KType) -> Long): IntArray {
 }
 
 /** Returns the indices that sort the list by a Double key in the order of `Double.compareTo`, keeping ties in their original order. */
-inline fun KTypeList.argsortByDouble(selector: (KType) -> Double): IntArray {
-    val keys = LongArray(length)
-    forEachIndexed { index, value -> keys[index] = totalOrderKey(selector(value)) }
-    return sortedIndicesByKey(keys)
-}
+inline fun KTypeList.argsortByDouble(selector: (KType) -> Double): IntArray = argsortByLong { totalOrderKey(selector(it)) }
 
 @PublishedApi
 internal fun KTypeList.applySortedIndices(indices: IntArray) {

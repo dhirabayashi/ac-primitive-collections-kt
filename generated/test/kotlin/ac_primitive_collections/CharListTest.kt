@@ -669,6 +669,23 @@ class CharListTest {
         assertEquals(expected.map { v(it) }, list.toList())
     }
 
+    /** The size alone would end this loop as if it had finished. */
+    @Test
+    fun clearingTheListFromAForInLoopFails() {
+        val list = listOfInts(1, 2, 3)
+        assertFailsWith<ConcurrentModificationException> { for (x in list) list.clear() }
+        val cleared = listOfInts(1, 2)
+        val withoutHasNext = cleared.iterator()
+        cleared.clear()
+        assertFailsWith<ConcurrentModificationException> { withoutHasNext.next() }
+        val iterator = listOfInts(1, 2).iterator()
+        assertTrue(iterator.hasNext())
+        assertEquals(v(1), iterator.next())
+        assertTrue(iterator.hasNext())
+        assertEquals(v(2), iterator.next())
+        assertFalse(iterator.hasNext())
+    }
+
     /** Plain tries: inlining through assertFailsWith as well would hide these branches from the coverage tool. */
     @Test
     fun keySelectorsCannotChangeTheList() {

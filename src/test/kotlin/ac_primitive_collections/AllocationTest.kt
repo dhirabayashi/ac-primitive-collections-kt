@@ -142,4 +142,77 @@ class AllocationTest {
     fun forOverIndices() = assertReachesZeroAllocation("for in indices") {
         for (i in list.indices) sink += list[i]
     }
+
+    private val longs = LongList(1000).also { l -> repeat(1000) { l.add(it.toLong()) } }
+    private val doubles = DoubleList(1000).also { l -> repeat(1000) { l.add(it.toDouble()) } }
+    private val chars = CharList(1000).also { l -> repeat(1000) { l.add('a' + it % 26) } }
+
+    /** The hot paths from docs/PLAN.md section 7.3, for the types other than Int. */
+    @Test
+    fun getAndSetOfOtherTypes() {
+        assertReachesZeroAllocation("long get and set") { longs[(sink++).toInt() and 511] = longs[1] }
+        assertReachesZeroAllocation("double get and set") { doubles[(sink++).toInt() and 511] = doubles[1] }
+        assertReachesZeroAllocation("char get and set") { chars[(sink++).toInt() and 511] = chars[1] }
+    }
+
+    @Test
+    fun addWithinCapacityOfOtherTypes() {
+        val longTarget = LongList(100)
+        val doubleTarget = DoubleList(100)
+        val charTarget = CharList(100)
+        assertReachesZeroAllocation("long add") {
+            longTarget.clear()
+            repeat(100) { longTarget.add(it.toLong()) }
+        }
+        assertReachesZeroAllocation("double add") {
+            doubleTarget.clear()
+            repeat(100) { doubleTarget.add(it.toDouble()) }
+        }
+        assertReachesZeroAllocation("char add") {
+            charTarget.clear()
+            repeat(100) { charTarget.add('a') }
+        }
+    }
+
+    @Test
+    fun containsOfOtherTypes() {
+        assertReachesZeroAllocation("long contains") { if (5L in longs) sink++ }
+        assertReachesZeroAllocation("double contains") { if (5.0 in doubles) sink++ }
+        assertReachesZeroAllocation("char contains") { if ('c' in chars) sink++ }
+    }
+
+    @Test
+    fun forUntilOfOtherTypes() {
+        assertReachesZeroAllocation("long for until") { for (i in 0 until longs.size) sink += longs[i] }
+        assertReachesZeroAllocation("double for until") { for (i in 0 until doubles.size) sink += doubles[i].toLong() }
+        assertReachesZeroAllocation("char for until") { for (i in 0 until chars.size) sink += chars[i].code }
+    }
+
+    @Test
+    fun forOverIndicesOfOtherTypes() {
+        assertReachesZeroAllocation("long for in indices") { for (i in longs.indices) sink += longs[i] }
+        assertReachesZeroAllocation("double for in indices") { for (i in doubles.indices) sink += doubles[i].toLong() }
+        assertReachesZeroAllocation("char for in indices") { for (i in chars.indices) sink += chars[i].code }
+    }
+
+    @Test
+    fun forOverOtherTypes() {
+        assertReachesZeroAllocation("for in long list") { for (x in longs) sink += x }
+        assertReachesZeroAllocation("for in double list") { for (x in doubles) sink += x.toLong() }
+        assertReachesZeroAllocation("for in char list") { for (x in chars) sink += x.code }
+    }
+
+    @Test
+    fun forEachOfOtherTypes() {
+        assertReachesZeroAllocation("long forEach") { longs.forEach { sink += it } }
+        assertReachesZeroAllocation("double forEach") { doubles.forEach { sink += it.toLong() } }
+        assertReachesZeroAllocation("char forEach") { chars.forEach { sink += it.code } }
+    }
+
+    @Test
+    fun aggregatesOfOtherTypes() {
+        assertReachesZeroAllocation("long aggregates") { sink += longs.sum() + longs.min() + longs.lowerBound(3L) }
+        assertReachesZeroAllocation("double aggregates") { sink += (doubles.sum() + doubles.min()).toLong() + doubles.lowerBound(3.0) }
+        assertReachesZeroAllocation("char aggregates") { sink += chars.min().code + chars.lowerBound('c') }
+    }
 }

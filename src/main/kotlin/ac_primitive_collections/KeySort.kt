@@ -10,8 +10,8 @@ internal fun totalOrderKey(key: Double): Long {
     return bits xor ((bits shr 63) ushr 1)
 }
 
-private const val RADIX_BITS = 8
-private const val RADIX = 1 shl RADIX_BITS
+private const val KEY_SORT_RADIX_BITS = 8
+private const val KEY_SORT_RADIX = 1 shl KEY_SORT_RADIX_BITS
 
 /**
  * Returns the indices that sort [keys] stably, with an LSD radix sort. A Long key leaves no room for
@@ -27,30 +27,30 @@ internal fun sortedIndicesByKey(keys: LongArray): IntArray {
         i++
     }
     var buffer = IntArray(n)
-    val counts = IntArray(RADIX)
+    val counts = IntArray(KEY_SORT_RADIX)
     var shift = 0
     while (shift < Long.SIZE_BITS) {
-        if (radixPass(keys, order, buffer, counts, shift)) {
+        if (keySortPass(keys, order, buffer, counts, shift)) {
             val swapped = order
             order = buffer
             buffer = swapped
         }
-        shift += RADIX_BITS
+        shift += KEY_SORT_RADIX_BITS
     }
     return order
 }
 
 /** Moves [order] into [target] by one byte of the keys. Returns false, having moved nothing, if all keys share that byte. */
-private fun radixPass(keys: LongArray, order: IntArray, target: IntArray, counts: IntArray, shift: Int): Boolean {
+private fun keySortPass(keys: LongArray, order: IntArray, target: IntArray, counts: IntArray, shift: Int): Boolean {
     counts.fill(0)
     var i = 0
     while (i < keys.size) {
-        counts[radixDigit(keys[i], shift)]++
+        counts[keySortDigit(keys[i], shift)]++
         i++
     }
     var total = 0
     var digit = 0
-    while (digit < RADIX) {
+    while (digit < KEY_SORT_RADIX) {
         val count = counts[digit]
         if (count == keys.size) return false
         counts[digit] = total
@@ -60,11 +60,11 @@ private fun radixPass(keys: LongArray, order: IntArray, target: IntArray, counts
     i = 0
     while (i < order.size) {
         val index = order[i]
-        target[counts[radixDigit(keys[index], shift)]++] = index
+        target[counts[keySortDigit(keys[index], shift)]++] = index
         i++
     }
     return true
 }
 
 /** Flipping the sign bit makes the unsigned digits sort the same way as the signed keys. */
-private fun radixDigit(key: Long, shift: Int): Int = ((key xor Long.MIN_VALUE) ushr shift).toInt() and (RADIX - 1)
+private fun keySortDigit(key: Long, shift: Int): Int = ((key xor Long.MIN_VALUE) ushr shift).toInt() and (KEY_SORT_RADIX - 1)

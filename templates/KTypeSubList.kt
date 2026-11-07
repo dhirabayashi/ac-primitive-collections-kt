@@ -134,11 +134,7 @@ class KTypeSubList @PublishedApi internal constructor(
     }
 
     /** Sorts stably by a Double key without a comparator, in the order of `Double.compareTo`. */
-    inline fun sortByDouble(selector: (KType) -> Double) {
-        val keys = LongArray(size)
-        forEachIndexed { index, value -> keys[index] = totalOrderKey(selector(value)) }
-        applySortedIndices(sortedIndicesByKey(keys))
-    }
+    inline fun sortByDouble(selector: (KType) -> Double) = sortByLong { totalOrderKey(selector(it)) }
 
     @PublishedApi
     internal fun applySortedIndices(indices: IntArray) {
@@ -185,18 +181,23 @@ class KTypeSubList @PublishedApi internal constructor(
         expectedModCount = parent.modCount
     }
 
+    /** [clear] moves expectedModCount along with the parent, so comparing it is what catches a clear from [action]. */
     inline fun forEach(action: (KType) -> Unit) {
+        val expected = expectedModCount
         var i = 0
         while (i < size) {
             action(parent.elements[offset + i])
+            if (expectedModCount != expected) throwConcurrentModification()
             i++
         }
     }
 
     inline fun forEachIndexed(action: (index: Int, value: KType) -> Unit) {
+        val expected = expectedModCount
         var i = 0
         while (i < size) {
             action(i, parent.elements[offset + i])
+            if (expectedModCount != expected) throwConcurrentModification()
             i++
         }
     }
@@ -220,11 +221,18 @@ class KTypeSubList @PublishedApi internal constructor(
     operator fun iterator(): KTypeIterator = ViewIterator(this)
 
     private class ViewIterator(private val view: KTypeSubList) : KTypeIterator() {
+        private val expected = view.expectedModCount
         private var next = 0
 
-        override fun hasNext(): Boolean = next < view.size
+        override fun hasNext(): Boolean {
+            if (view.expectedModCount != expected) throwConcurrentModification()
+            return next < view.size
+        }
 
-        override fun nextKType(): KType = view[next++]
+        override fun nextKType(): KType {
+            if (view.expectedModCount != expected) throwConcurrentModification()
+            return view[next++]
+        }
     }
 
     /** Nested views point at the parent directly, so they do not add a level of indirection. */

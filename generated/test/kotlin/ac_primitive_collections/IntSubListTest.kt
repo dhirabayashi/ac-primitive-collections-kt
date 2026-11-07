@@ -323,6 +323,51 @@ class IntSubListTest {
         assertEquals(v(3), view.last())
     }
 
+    /**
+     * Stopping quietly here would give a wrong answer: `all` would say true after seeing one element.
+     * Plain tries: inlining through assertFailsWith as well would hide these branches from the coverage tool.
+     */
+    @Test
+    fun clearingTheViewFromALoopFails() {
+        fun failsOnClear(use: (IntSubList) -> Unit): Boolean {
+            val list = listOfInts(1, 2, 3, 4)
+            return try {
+                use(list.subList(1, 3))
+                false
+            } catch (_: ConcurrentModificationException) {
+                assertEquals(ints(1, 4), list.toList())
+                true
+            }
+        }
+        assertTrue(failsOnClear { view -> view.forEach { view.clear() } })
+        assertTrue(failsOnClear { view -> view.forEachIndexed { _, _ -> view.clear() } })
+        assertTrue(failsOnClear { view -> view.count { view.clear(); true } })
+        assertTrue(failsOnClear { view -> view.any { view.clear(); false } })
+        assertTrue(failsOnClear { view -> view.all { view.clear(); true } })
+        assertTrue(failsOnClear { view -> for (x in view) view.clear() })
+        assertTrue(failsOnClear { view -> view.sortBy { view.clear(); 0 } })
+        assertTrue(failsOnClear { view -> view.sortByLong { view.clear(); 0L } })
+        assertTrue(failsOnClear { view -> view.sortByDouble { view.clear(); 0.0 } })
+    }
+
+    /** Without hasNext, an iterator still has to report the clear rather than an index out of bounds. */
+    @Test
+    fun anIteratorReportsAClearFromNext() {
+        val view = listOfInts(1, 2, 3).subList(0, 3)
+        val iterator = view.iterator()
+        view.clear()
+        assertFailsWith<ConcurrentModificationException> { iterator.next() }
+        assertFailsWith<ConcurrentModificationException> { iterator.hasNext() }
+    }
+
+    @Test
+    fun anIteratorEndsNormallyWithoutChanges() {
+        val iterator = listOfInts(1).subList(0, 1).iterator()
+        assertTrue(iterator.hasNext())
+        assertEquals(v(1), iterator.next())
+        assertFalse(iterator.hasNext())
+    }
+
     @Test
     fun conversionsAndEquality() {
         val list = listOfInts(0, 1, 2, 0)
