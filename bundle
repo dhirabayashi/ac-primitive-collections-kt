@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: CC0-1.0
 # Bundles Main.kt with the library for submission. See docs/PLAN.md, section 8.
 #
-#   bundle -p            Bundle ./Main.kt for practice and copy the result to the clipboard.
-#   bundle               The same for a contest. Fails unless the library is at a pushed tag.
+#   bundle -p            Bundle ./Main.kt from the working tree for practice and copy the result to the clipboard.
+#   bundle               The same for a contest. Uses the latest pushed tag, whatever is checked out.
 #   bundle -o Out.kt X.kt   Choose the input and write to a file.
 #
 # To run it from any directory: ln -s "$PWD/bundle" ~/.local/bin/bundle

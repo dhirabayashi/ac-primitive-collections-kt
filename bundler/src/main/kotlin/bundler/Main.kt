@@ -8,7 +8,7 @@ private const val USAGE = """Usage: bundler [options] [Main.kt]
   The input defaults to Main.kt in the current directory.
   -o, --output FILE      Write here instead of standard output.
   --root DIR             The library repository. Defaults to AC_PRIMITIVE_COLLECTIONS_ROOT, then the current directory.
-  -p, --allow-unpublished  Practice mode: allow a library state with no pushed tag. Never use this in a contest.
+  -p, --allow-unpublished  Practice mode: use the working tree instead of the latest pushed tag. Never use this in a contest.
   --strip-comments       Remove comments and blank lines from the output."""
 
 fun loadLibrary(root: File): List<SourceFile> {
@@ -46,13 +46,18 @@ fun main(args: Array<String>) {
         exitProcess(2)
     }
     try {
-        val reference = Publication.referenceLine(ProcessGit(root), allowUnpublished)
-        val result = Bundler.bundle(
-            SourceFile(mainFile.name, mainFile.readText()),
-            loadLibrary(root),
-            BundleOptions(reference, stripComments),
-        )
-        result.warnings.forEach { System.err.println("warning: $it") }
+        val git = ProcessGit(root)
+        val userCode = SourceFile(mainFile.name, mainFile.readText())
+        val localLibrary = loadLibrary(root)
+        val release = if (allowUnpublished) null else Publication.latestRelease(git)
+        val library = release?.let { Publication.loadRelease(git, it) } ?: localLibrary
+        val reference = release?.let { Publication.referenceLine(git, it) } ?: Publication.unpublishedReferenceLine(git)
+        val result = Bundler.bundle(userCode, library, BundleOptions(reference, stripComments))
+        val differences = release?.let {
+            Publication.localDifferenceWarnings(userCode, result.includedFiles, library, localLibrary, it.tag)
+        }.orEmpty()
+        (result.warnings + differences).forEach { System.err.println("warning: $it") }
+        System.err.println(reference)
         System.err.println("Included ${result.includedFiles.size} library files, ${result.source.toByteArray().size} bytes: ${result.includedFiles.joinToString()}")
         if (output != null) output.writeText(result.source) else print(result.source)
     } catch (e: BundleException) {

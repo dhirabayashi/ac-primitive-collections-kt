@@ -17,47 +17,86 @@ class ProcessGit(private val directory: File) : Git {
     }
 }
 
+/** A release tag on origin and the commit it points at there. */
+data class Release(val tag: String, val commit: String)
+
 /**
  * Enforces docs/PLAN.md, section 9: contest code must come from a pushed tag, and the
- * submission must carry a link to it.
+ * submission must carry a link to it. Contest code is read from the commit that origin
+ * reports, so nothing in the working tree can reach it.
  */
 object Publication {
-    private val SOURCE_PATHS = arrayOf("generated/main", "src/main")
+    private val SOURCE_DIRECTORIES = arrayOf("generated/main/kotlin", "src/main/kotlin")
+    private val RELEASE_TAG = Regex("""v\d{1,9}(\.\d{1,9})*""")
 
-    /** Returns the header line, or throws if the library is not published and [allowUnpublished] is false. */
-    fun referenceLine(git: Git, allowUnpublished: Boolean): String {
+    /** Numeric, so v0.10.0 is newer than v0.9.0. Missing parts count as 0. */
+    private val VERSION_ORDER = Comparator<Release> { a, b ->
+        val x = versionNumbers(a.tag)
+        val y = versionNumbers(b.tag)
+        (0 until maxOf(x.size, y.size))
+            .map { x.getOrElse(it) { 0 }.compareTo(y.getOrElse(it) { 0 }) }
+            .firstOrNull { it != 0 } ?: 0
+    }
+
+    private fun versionNumbers(tag: String) = tag.removePrefix("v").split('.').map(String::toInt)
+
+    fun latestRelease(git: Git): Release {
+        val remote = git.run("ls-remote", "--tags", "origin")
+            ?: throw BundleException("Cannot reach origin to find the latest pushed tag. Check the network and retry.")
+        return parseReleases(remote).maxWithOrNull(VERSION_ORDER)
+            ?: throw BundleException("origin has no release tag (v*). Push one first, or pass -p for practice outside contests.")
+    }
+
+    private fun parseReleases(lsRemote: String): List<Release> {
+        val commits = LinkedHashMap<String, String>()
+        for (line in lsRemote.lines().filter { it.isNotBlank() }) {
+            // An annotated tag lists the tag object first and the commit in the ^{} line, so the last line wins.
+            val tag = line.substringAfter('\t').removePrefix("refs/tags/").removeSuffix("^{}")
+            if (RELEASE_TAG.matches(tag)) commits[tag] = line.substringBefore('\t')
+        }
+        return commits.map { (tag, commit) -> Release(tag, commit) }
+    }
+
+    fun loadRelease(git: Git, release: Release): List<SourceFile> {
+        val missing = "The commit of ${release.tag} is not in the local repository. Run: git fetch --tags origin"
+        val paths = git.run("ls-tree", "-r", "--name-only", release.commit, "--", *SOURCE_DIRECTORIES)
+            ?: throw BundleException(missing)
+        val files = paths.lines().filter { it.endsWith(".kt") }.map { path ->
+            SourceFile(path.substringAfterLast('/'), git.run("show", "${release.commit}:$path") ?: throw BundleException(missing))
+        }
+        if (files.isEmpty()) throw BundleException("${release.tag} has no library sources.")
+        return files.sortedBy { it.name }
+    }
+
+    fun referenceLine(git: Git, release: Release): String =
+        "// Library source (created with generative AI): ${httpsUrl(git.run("remote", "get-url", "origin"))}/tree/${release.tag}"
+
+    fun unpublishedReferenceLine(git: Git): String {
         val repository = httpsUrl(git.run("remote", "get-url", "origin"))
-        val problem = findProblem(git)
-        if (problem == null) {
-            val tag = releaseTagAtHead(git)!!
-            return "// Library source (created with generative AI): $repository/tree/$tag"
-        }
-        if (!allowUnpublished) {
-            throw BundleException(
-                "$problem\nThe AtCoder rules require code made with generative AI to be public before a contest. " +
-                    "Publish a tag first, or pass -p for practice outside contests.",
-            )
-        }
         val commit = git.run("rev-parse", "--short", "HEAD") ?: "unknown"
         return "// Library source (created with generative AI): $repository (UNPUBLISHED local state at $commit, not for contests)"
     }
 
-    private fun findProblem(git: Git): String? {
-        val status = git.run("status", "--porcelain", "--", *SOURCE_PATHS) ?: return "Cannot read the git status."
-        if (status.isNotEmpty()) return "The library sources have uncommitted changes:\n$status"
-        val tag = releaseTagAtHead(git) ?: return "HEAD has no release tag (v*)."
-        val head = git.run("rev-parse", "HEAD") ?: return "Cannot read HEAD."
-        val remote = git.run("ls-remote", "--tags", "origin", "refs/tags/$tag", "refs/tags/$tag^{}")
-            ?: return "Cannot reach origin to confirm that $tag is pushed."
-        val commits = remote.lines().filter { it.isNotBlank() }.map { it.substringBefore('\t') }
-        if (commits.isEmpty()) return "Tag $tag is not on origin. Push it first."
-        // An annotated tag lists the tag object first and the commit in the ^{} line.
-        if (commits.last() != head) return "Tag $tag on origin points somewhere other than HEAD."
-        return null
+    /**
+     * Local runs use the working tree through includeBuild, but the submission uses the release, so
+     * code that works locally can behave differently or fail to compile. These are warnings, because
+     * the scan cannot tell a library name from a user's local variable and must not block a valid submission.
+     */
+    fun localDifferenceWarnings(main: SourceFile, included: List<String>, published: List<SourceFile>, local: List<SourceFile>, tag: String): List<String> {
+        if (main.imports.none(Bundler::isLibraryImport)) return emptyList()
+        val publishedTexts = published.associate { it.name to it.text.trim() }
+        val localTexts = local.associate { it.name to it.text.trim() }
+        val changed = included.filter { it in localTexts && localTexts[it] != publishedTexts[it] }
+        val publishedNames = published.flatMapTo(HashSet()) { file -> file.declarations.map { it.name } }
+        val userNames = main.declarations.mapTo(HashSet()) { it.name }
+        val newer = local.flatMap { file -> file.declarations.map { it.name } }
+            .filter { it in main.identifiers && it !in publishedNames && it !in userNames }
+            .distinct().sorted()
+        return buildList {
+            if (changed.isNotEmpty()) add("The submission uses $tag, which differs from your local library in: ${changed.joinToString()}")
+            if (newer.isNotEmpty()) add("Not in $tag, so this may not compile on AtCoder: ${newer.joinToString()}. Push a new tag, or avoid them.")
+        }
     }
-
-    private fun releaseTagAtHead(git: Git): String? =
-        git.run("tag", "--points-at", "HEAD")?.lines()?.filter { it.startsWith("v") }?.maxOrNull()
 
     /** Accepts `git@github.com:owner/repo.git` and `https://github.com/owner/repo.git`. */
     fun httpsUrl(remote: String?): String {
