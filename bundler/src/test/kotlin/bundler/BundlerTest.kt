@@ -52,13 +52,53 @@ class BundlerTest {
     }
 
     @Test
-    fun aMemberCallInsideTheLibraryDoesNotPullInTheSameNamedExtension() {
-        val owner = lib("L.kt", "class L { fun addAll(x: Int) {} ; fun twice() { addAll(1); addAll(2) } }")
-        val extension = lib("Ext.kt", "fun L.addAll(x: Iterable<Int>) {}")
-        val noUse = Bundler.bundle(main("fun main() { L().twice() }"), listOf(owner, extension), options)
-        assertEquals(listOf("L.kt"), noUse.includedFiles)
-        val userUse = Bundler.bundle(main("fun main() { L().addAll(listOf(1)) }"), listOf(owner, extension), options)
-        assertEquals(listOf("Ext.kt", "L.kt"), userUse.includedFiles)
+    fun aMemberThatHandsItsWorkToASameNamedExtensionPullsItIn() {
+        // The shape of SubList.sortWith, which calls the list's sortWith extension, with no other name to lead there.
+        val list = lib("L.kt", "class L")
+        val view = lib("V.kt", "class V(val parent: L) { fun sortAll() { parent.sortAll(0) } }")
+        val extension = lib("Ext.kt", "fun L.sortAll(from: Int) {}")
+        val result = Bundler.bundle(main("fun main() { V(L()).sortAll() }"), listOf(list, view, extension), options)
+        assertEquals(listOf("Ext.kt", "L.kt", "V.kt"), result.includedFiles)
+    }
+
+    @Test
+    fun anExtensionOnALibraryTypeNeedsThatType() {
+        val intType = lib("IntL.kt", "class IntL\nfun intLOf() = IntL()")
+        val longType = lib("LongL.kt", "class LongL\nfun longLOf() = LongL()")
+        val intSort = lib("IntLSort.kt", "fun IntL.sortBy() {}")
+        val longSort = lib("LongLSort.kt", "fun LongL.sortBy() {}")
+        val all = listOf(intType, longType, intSort, longSort)
+        val one = Bundler.bundle(main("fun main() { intLOf().sortBy() }"), all, options)
+        assertEquals(listOf("IntL.kt", "IntLSort.kt"), one.includedFiles)
+        val both = Bundler.bundle(main("fun main() { intLOf().sortBy(); longLOf() }"), all, options)
+        assertEquals(listOf("IntL.kt", "IntLSort.kt", "LongL.kt", "LongLSort.kt"), both.includedFiles)
+        assertEquals(emptyList(), Bundler.bundle(main("fun main() { listOf(1).sortBy() }"), all, options).includedFiles)
+    }
+
+    @Test
+    fun anExtensionThatReturnsAnotherTypeBringsThatTypesExtensions() {
+        val intType = lib("IntL.kt", "class IntL")
+        val longType = lib("LongL.kt", "class LongL")
+        val convert = lib("IntLToLong.kt", "fun IntL.toLong() = LongL()")
+        val intSort = lib("IntLSort.kt", "fun IntL.sortBy() {}")
+        val longSort = lib("LongLSort.kt", "fun LongL.sortBy() {}")
+        val result = Bundler.bundle(main("fun main() { IntL().toLong().sortBy() }"), listOf(longSort, intSort, convert, longType, intType), options)
+        assertEquals(listOf("IntL.kt", "IntLSort.kt", "IntLToLong.kt", "LongL.kt", "LongLSort.kt"), result.includedFiles)
+    }
+
+    @Test
+    fun anExtensionOnAnOutsideTypeNeedsOnlyItsName() {
+        val generic = lib("G.kt", "fun Iterable<Int>.toL() = 1\nfun <T> T.ext() = 2")
+        assertEquals(listOf("G.kt"), Bundler.bundle(main("fun main() { listOf(1).toL() }"), listOf(generic), options).includedFiles)
+        assertEquals(listOf("G.kt"), Bundler.bundle(main("fun main() { 1.ext() }"), listOf(generic), options).includedFiles)
+    }
+
+    @Test
+    fun aNullableReceiverCountsAsItsType() {
+        val owner = lib("N.kt", "class N")
+        val extension = lib("NExt.kt", "fun N?.orNew() = this")
+        assertEquals(emptyList(), Bundler.bundle(main("fun main() { x.orNew() }"), listOf(owner, extension), options).includedFiles)
+        assertEquals(listOf("N.kt", "NExt.kt"), Bundler.bundle(main("fun main() { N().orNew() }"), listOf(owner, extension), options).includedFiles)
     }
 
     @Test
@@ -115,11 +155,27 @@ class BundlerTest {
     }
 
     @Test
-    fun rejectsInternalUse() {
-        val failure = assertFailsWith<BundleException> {
-            Bundler.bundle(main("fun main() { helper(); IntList() }"), library, options)
-        }
-        assertTrue("helper" in failure.message!!)
+    fun warnsAboutInternalUse() {
+        val result = Bundler.bundle(main("fun main() { helper(); IntList() }"), library, options)
+        assertTrue("helper" in result.warnings.single(), result.warnings.toString())
+    }
+
+    /** The scan cannot tell a local variable from the internal function, so it must not stop a submission. */
+    @Test
+    fun aLocalVariableNamedLikeAnInternalDoesNotStopTheBundle() {
+        val result = Bundler.bundle(main("fun main() { val helper = 1; println(IntList().add(helper)) }"), library, options)
+        assertTrue("helper" in result.warnings.single(), result.warnings.toString())
+        assertTrue("val helper = 1" in result.source)
+    }
+
+    @Test
+    fun codeWithoutTheLibraryImportGetsNoInternalWarning() {
+        assertEquals(emptyList(), Bundler.bundle(main("fun main() { val helper = 1 }", ""), library, options).warnings)
+    }
+
+    @Test
+    fun aTopLevelNameOfTheUsersOwnIsNotInternalUse() {
+        assertEquals(emptyList(), Bundler.bundle(main("val answer = 1\nfun main() { println(answer) }"), library, options).warnings)
     }
 
     @Test

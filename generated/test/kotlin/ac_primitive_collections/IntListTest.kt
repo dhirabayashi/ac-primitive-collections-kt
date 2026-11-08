@@ -16,6 +16,10 @@ import kotlin.test.assertTrue
 /** Hand-written expectations. The differential test cannot catch a spec misread that java.util shares. */
 class IntListTest {
     private fun v(i: Int): Int = i.toInt()
+
+    /** `Double.MIN_VALUE` is the smallest positive value, so it does not sort first. */
+    private val lowest: Int = Int.MIN_VALUE
+
     private fun listOfInts(vararg values: Int) = IntList(values.size) { v(values[it]) }
     private fun assertList(list: IntList, vararg expected: Int) {
         assertEquals(expected.map { v(it) }, list.toList())
@@ -64,12 +68,36 @@ class IntListTest {
     }
 
     @Test
+    fun fromProgression() {
+        assertList((v(1)..v(5) step 2).toIntList(), 1, 3, 5)
+        assertList((v(1)..v(6) step 2).toIntList(), 1, 3, 5)
+        assertList((v(3) downTo v(1)).toIntList(), 3, 2, 1)
+        assertList((v(1) downTo v(3)).toIntList())
+        assertList((v(2)..v(2) step 2).toIntList(), 2)
+        assertList((v(2) downTo v(2)).toIntList(), 2)
+        val nearMin = (Int.MIN_VALUE + 1) downTo Int.MIN_VALUE
+        assertEquals(listOf(Int.MIN_VALUE + 1, Int.MIN_VALUE), nearMin.toIntList().toList())
+        val pastMax = (Int.MAX_VALUE - 2)..Int.MAX_VALUE step 2
+        assertEquals(listOf(Int.MAX_VALUE - 2, Int.MAX_VALUE), pastMax.toIntList().toList())
+    }
+
+    @Test
+    fun addAllProgressions() {
+        val list = IntList()
+        list.addAll(v(1)..v(2))
+        list.addAll(v(5) downTo v(4))
+        list.addAll(v(6)..v(8) step 2)
+        list.addAll(v(2)..v(1))
+        assertList(list, 1, 2, 5, 4, 6, 8)
+    }
+
+    @Test
     fun elementAccess() {
         val list = listOfInts(1, 2, 3)
         assertEquals(v(2), list[1])
         list[1] = v(9)
         assertEquals(v(9), list[1])
-        list[1] += v(1)
+        list[1] += 1
         assertEquals(v(10), list[1])
         for (bad in intArrayOf(-1, 3)) {
             assertFailsWith<IndexOutOfBoundsException> { list[bad] }
@@ -104,7 +132,8 @@ class IntListTest {
                 { it.fill(v(9), from, to) }, { it.indexOfMin(from, to) }, { it.indexOfMax(from, to) }, { it.min(from, to) },
                 { it.max(from, to) }, { it.removeRange(from, to) }, { it.reverse(from, to) }, { it.rotate(1, from, to) },
                 { it.shuffle(Random(1), from, to) }, { it.slice(from, to) }, { it.sort(from, to) },
-                { it.sortDescending(from, to) }, { it.sum(from, to) }, { it.sortWith({ _, _ -> 0 }, from, to) },
+                { it.sortDescending(from, to) }, { it.sortWith({ _, _ -> 0 }, from, to) },
+                { it.sum(from, to) },
                 { it.subList(from, to) },
             )
             for (check in checks) {
@@ -297,7 +326,7 @@ class IntListTest {
     @Test
     fun removeIfCompacts() {
         val list = listOfInts(1, 2, 3, 4)
-        assertTrue(list.removeIf { it.toInt() % 2 == 0 })
+        assertTrue(list.removeIf { it % 2 == 0 })
         assertList(list, 1, 3)
         assertFalse(list.removeIf { false })
         assertList(list, 1, 3)
@@ -459,7 +488,8 @@ class IntListTest {
         assertEquals(v(5), list.max(1, 3))
         for (bad in listOf<(IntList) -> Unit>(
             { it.sort(0, 6) }, { it.sortDescending(0, 6) }, { it.reverse(0, 6) },
-            { it.rotate(1, 0, 6) }, { it.fill(v(0), 0, 6) }, { it.sum(0, 6) }, { it.min(0, 6) }, { it.max(0, 6) },
+            { it.rotate(1, 0, 6) }, { it.fill(v(0), 0, 6) }, { it.min(0, 6) }, { it.max(0, 6) },
+            { it.sum(0, 6) },
             { it.shuffle(Random(1), 0, 6) },
         )) {
             assertFailsWith<IndexOutOfBoundsException> { bad(list) }
@@ -556,7 +586,7 @@ class IntListTest {
             reversed.sortWith { a, b -> b.compareTo(a) }
             assertEquals(descending, reversed.toList())
             val by = permutation.copy()
-            by.sortBy { -it.toInt() }
+            by.sortBy { -it }
             assertEquals(descending, by.toList())
         } while (permutation.nextPermutation())
     }
@@ -585,19 +615,19 @@ class IntListTest {
                 assertEquals(expected, natural.toList(), "n=$n")
                 // Sort by the low bits only, and check against the stable standard sort.
                 val byLowBits = list.copy()
-                byLowBits.sortWith { a, b -> (a.toInt() and 3).compareTo(b.toInt() and 3) }
-                assertEquals(list.toList().sortedBy { it.toInt() and 3 }, byLowBits.toList(), "n=$n")
+                byLowBits.sortWith { a, b -> (a and 3).compareTo(b and 3) }
+                assertEquals(list.toList().sortedBy { it and 3 }, byLowBits.toList(), "n=$n")
                 val keyed = list.copy()
-                keyed.sortBy { it.toInt() and 3 }
-                assertEquals(list.toList().sortedBy { it.toInt() and 3 }, keyed.toList(), "n=$n")
+                keyed.sortBy { it and 3 }
+                assertEquals(list.toList().sortedBy { it and 3 }, keyed.toList(), "n=$n")
                 assertEquals(
                     list.toList().indices.sortedBy { list[it] },
                     list.argsort().toList(),
                     "n=$n",
                 )
                 assertEquals(
-                    list.toList().indices.sortedBy { list[it].toInt() and 3 },
-                    list.argsortBy { it.toInt() and 3 }.toList(),
+                    list.toList().indices.sortedBy { list[it] and 3 },
+                    list.argsortBy { it and 3 }.toList(),
                     "n=$n",
                 )
             }
@@ -625,7 +655,7 @@ class IntListTest {
         list.sortWith({ a, b -> a.compareTo(b) }, 5, 30)
         assertEquals(
             (1..40).reversed().toList().subList(0, 5) + (11..35).toList() + (1..10).reversed().toList(),
-            list.toList().map { it.toInt() },
+            list.toList().map { it },
         )
         assertFailsWith<IndexOutOfBoundsException> { list.sortWith({ _, _ -> 0 }, 0, 41) }
     }
@@ -643,8 +673,70 @@ class IntListTest {
 
     @Test
     fun argsortOrdersExtremeKeysAndKeepsTies() {
-        val list = IntList(4) { i -> listOf(Int.MAX_VALUE, Int.MIN_VALUE, 0, Int.MIN_VALUE)[i] }
+        val list = IntList(4) { i -> listOf(Int.MAX_VALUE, lowest, v(1), lowest)[i] }
         assertContentEquals(intArrayOf(1, 3, 2, 0), list.argsort())
+    }
+
+    @Test
+    fun sortByLongOrdersExtremeKeysAndKeepsTies() {
+        val keys = longArrayOf(Long.MAX_VALUE, Long.MIN_VALUE, -1L, 1L shl 40, -1L, 0L)
+        val list = listOfInts(0, 1, 2, 3, 4, 5)
+        val expected = listOf(1, 2, 4, 5, 3, 0)
+        assertEquals(expected, list.argsortByLong { keys[it] }.toList())
+        list.sortByLong { keys[it] }
+        assertEquals(expected.map { v(it) }, list.toList())
+        assertTrue(IntList().argsortByLong { 0L }.isEmpty())
+    }
+
+    @Test
+    fun sortByDoubleUsesTheOrderOfCompareTo() {
+        val keys = doubleArrayOf(Double.NaN, 0.0, -0.0, Double.NEGATIVE_INFINITY, 1.5, Double.POSITIVE_INFINITY, -1.5, 0.0)
+        val list = listOfInts(0, 1, 2, 3, 4, 5, 6, 7)
+        val expected = listOf(3, 6, 2, 1, 7, 4, 5, 0)
+        assertEquals(expected, list.argsortByDouble { keys[it] }.toList())
+        list.sortByDouble { keys[it] }
+        assertEquals(expected.map { v(it) }, list.toList())
+    }
+
+    /** The size alone would end this loop as if it had finished. */
+    @Test
+    fun clearingTheListFromAForInLoopFails() {
+        val list = listOfInts(1, 2, 3)
+        assertFailsWith<ConcurrentModificationException> { for (x in list) list.clear() }
+        val cleared = listOfInts(1, 2)
+        val withoutHasNext = cleared.iterator()
+        cleared.clear()
+        assertFailsWith<ConcurrentModificationException> { withoutHasNext.next() }
+        val iterator = listOfInts(1, 2).iterator()
+        assertTrue(iterator.hasNext())
+        assertEquals(v(1), iterator.next())
+        assertTrue(iterator.hasNext())
+        assertEquals(v(2), iterator.next())
+        assertFalse(iterator.hasNext())
+    }
+
+    /** Plain tries: inlining through assertFailsWith as well would hide these branches from the coverage tool. */
+    @Test
+    fun keySelectorsCannotChangeTheList() {
+        fun failsOnChange(sort: (IntList) -> Unit): Boolean {
+            val list = listOfInts(1, 2)
+            return try {
+                sort(list)
+                false
+            } catch (_: ConcurrentModificationException) {
+                true
+            }
+        }
+        assertTrue(failsOnChange { list -> list.sortByLong { list.clear(); 0L } })
+        assertTrue(failsOnChange { list -> list.sortByDouble { list.clear(); 0.0 } })
+        assertTrue(failsOnChange { list -> list.argsortByLong { list.clear(); 0L } })
+        assertTrue(failsOnChange { list -> list.argsortByDouble { list.clear(); 0.0 } })
+    }
+
+
+    @Test
+    fun sumOfTheElementType() {
+        assertEquals(v(6).toLong(), listOfInts(1, 2, 3).sum())
     }
 
     @Test
@@ -689,16 +781,16 @@ class IntListTest {
     @Test
     fun higherOrder() {
         val list = listOfInts(1, 2, 3, 4)
-        assertList(list.map { v(it.toInt() * 2) }, 2, 4, 6, 8)
-        assertList(list.filter { it.toInt() % 2 == 0 }, 2, 4)
+        assertList(list.map { v(it * 2) }, 2, 4, 6, 8)
+        assertList(list.filter { it % 2 == 0 }, 2, 4)
         assertTrue(list.any { it == v(4) })
         assertFalse(list.any { it == v(5) })
-        assertTrue(list.all { it.toInt() > 0 })
-        assertFalse(list.all { it.toInt() > 1 })
+        assertTrue(list.all { it > 0 })
+        assertFalse(list.all { it > 1 })
         assertTrue(list.none { it == v(5) })
         assertFalse(list.none { it == v(4) })
-        assertEquals(2, list.count { it.toInt() > 2 })
-        assertEquals(10, list.fold(0) { acc, x -> acc + x.toInt() })
+        assertEquals(2, list.count { it > 2 })
+        assertEquals(10, list.fold(0) { acc, x -> acc + x })
         assertEquals(11L, list.fold(1L) { acc, x -> acc + x.toLong() })
         assertEquals(10.5, list.fold(0.5) { acc, x -> acc + x.toDouble() })
         assertEquals(20L, list.sumOf { it.toLong() * 2 })
@@ -718,8 +810,8 @@ class IntListTest {
 
     @Test
     fun aggregatesOfBoundaryValues() {
-        val list = IntList(3) { i -> listOf(Int.MIN_VALUE, 0, Int.MAX_VALUE)[i] }
-        assertEquals(Int.MIN_VALUE, list.min())
+        val list = IntList(3) { i -> listOf(lowest, v(1), Int.MAX_VALUE)[i] }
+        assertEquals(lowest, list.min())
         assertEquals(Int.MAX_VALUE, list.max())
     }
 
@@ -816,15 +908,17 @@ class IntListTest {
     @Test
     fun text() {
         val a = listOfInts(1, 2)
-        assertEquals("[1, 2]", a.toString())
-        assertEquals("1, 2", a.joinToString())
-        assertEquals("<1|2>", a.joinToString("|", "<", ">"))
+        val one = v(1).toString()
+        val two = v(2).toString()
+        assertEquals("[$one, $two]", a.toString())
+        assertEquals("$one, $two", a.joinToString())
+        assertEquals("<$one|$two>", a.joinToString("|", "<", ">"))
         val builder = StringBuilder("x")
         a.appendTo(builder)
-        assertEquals("x1 2", builder.toString())
+        assertEquals("x$one $two", builder.toString())
         builder.clear()
         a.appendTo(builder, ",")
-        assertEquals("1,2", builder.toString())
+        assertEquals("$one,$two", builder.toString())
     }
 
     @Test

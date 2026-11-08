@@ -124,12 +124,21 @@ class IntSubList @PublishedApi internal constructor(
     inline fun sortBy(selector: (Int) -> Int) {
         val keys = LongArray(size)
         forEachIndexed { index, value -> keys[index] = packKeyAndIndex(selector(value), index) }
-        applySortedKeys(keys)
+        applySortedIndices(sortedIndices(keys))
     }
 
+    /** Sorts stably by a Long key without a comparator. */
+    inline fun sortByLong(selector: (Int) -> Long) {
+        val keys = LongArray(size)
+        forEachIndexed { index, value -> keys[index] = selector(value) }
+        applySortedIndices(sortedIndicesByKey(keys))
+    }
+
+    /** Sorts stably by a Double key without a comparator, in the order of `Double.compareTo`. */
+    inline fun sortByDouble(selector: (Int) -> Double) = sortByLong { totalOrderKey(selector(it)) }
+
     @PublishedApi
-    internal fun applySortedKeys(keys: LongArray) {
-        val indices = sortedIndices(keys)
+    internal fun applySortedIndices(indices: IntArray) {
         val source = toIntArray()
         var i = 0
         while (i < indices.size) {
@@ -173,18 +182,28 @@ class IntSubList @PublishedApi internal constructor(
         expectedModCount = parent.modCount
     }
 
+    /**
+     * Changes through the view, [clear] included, also move the parent's modCount, so one comparison with its
+     * starting value per element catches changes from either side.
+     */
     inline fun forEach(action: (Int) -> Unit) {
+        checkParent()
+        val expected = parent.modCount
         var i = 0
-        while (i < size) {
+        while (i < length) {
             action(parent.elements[offset + i])
+            if (parent.modCount != expected) throwConcurrentModification()
             i++
         }
     }
 
     inline fun forEachIndexed(action: (index: Int, value: Int) -> Unit) {
+        checkParent()
+        val expected = parent.modCount
         var i = 0
-        while (i < size) {
+        while (i < length) {
             action(i, parent.elements[offset + i])
+            if (parent.modCount != expected) throwConcurrentModification()
             i++
         }
     }
@@ -205,14 +224,27 @@ class IntSubList @PublishedApi internal constructor(
         return true
     }
 
-    operator fun iterator(): IntIterator = ViewIterator(this)
+    operator fun iterator(): IntIterator {
+        checkParent()
+        return ViewIterator(this)
+    }
 
+    /** Compares the parent's modCount as [forEach] does, and like the list's iterator, once per element plus once at the end. */
     private class ViewIterator(private val view: IntSubList) : IntIterator() {
+        private val expected = view.parent.modCount
         private var next = 0
 
-        override fun hasNext(): Boolean = next < view.size
+        override fun hasNext(): Boolean {
+            if (next < view.length) return true
+            if (view.parent.modCount != expected) throwConcurrentModification()
+            return false
+        }
 
-        override fun nextInt(): Int = view[next++]
+        override fun nextInt(): Int {
+            if (view.parent.modCount != expected) throwConcurrentModification()
+            if (next >= view.length) throwEmpty()
+            return view.parent.elements[view.offset + next++]
+        }
     }
 
     /** Nested views point at the parent directly, so they do not add a level of indirection. */

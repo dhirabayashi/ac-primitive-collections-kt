@@ -87,10 +87,12 @@ class KTypeSubList @PublishedApi internal constructor(
         return parent.upperBound(value, offset, offset + length) - offset
     }
 
+    //#if K_NUMERIC
     fun sum(): K_SUM_TYPE {
         checkParent()
         return parent.sum(offset, offset + length)
     }
+    //#endif
 
     fun min(): KType {
         checkParent()
@@ -121,12 +123,21 @@ class KTypeSubList @PublishedApi internal constructor(
     inline fun sortBy(selector: (KType) -> Int) {
         val keys = LongArray(size)
         forEachIndexed { index, value -> keys[index] = packKeyAndIndex(selector(value), index) }
-        applySortedKeys(keys)
+        applySortedIndices(sortedIndices(keys))
     }
 
+    /** Sorts stably by a Long key without a comparator. */
+    inline fun sortByLong(selector: (KType) -> Long) {
+        val keys = LongArray(size)
+        forEachIndexed { index, value -> keys[index] = selector(value) }
+        applySortedIndices(sortedIndicesByKey(keys))
+    }
+
+    /** Sorts stably by a Double key without a comparator, in the order of `Double.compareTo`. */
+    inline fun sortByDouble(selector: (KType) -> Double) = sortByLong { totalOrderKey(selector(it)) }
+
     @PublishedApi
-    internal fun applySortedKeys(keys: LongArray) {
-        val indices = sortedIndices(keys)
+    internal fun applySortedIndices(indices: IntArray) {
         val source = toKTypeArray()
         var i = 0
         while (i < indices.size) {
@@ -170,18 +181,28 @@ class KTypeSubList @PublishedApi internal constructor(
         expectedModCount = parent.modCount
     }
 
+    /**
+     * Changes through the view, [clear] included, also move the parent's modCount, so one comparison with its
+     * starting value per element catches changes from either side.
+     */
     inline fun forEach(action: (KType) -> Unit) {
+        checkParent()
+        val expected = parent.modCount
         var i = 0
-        while (i < size) {
+        while (i < length) {
             action(parent.elements[offset + i])
+            if (parent.modCount != expected) throwConcurrentModification()
             i++
         }
     }
 
     inline fun forEachIndexed(action: (index: Int, value: KType) -> Unit) {
+        checkParent()
+        val expected = parent.modCount
         var i = 0
-        while (i < size) {
+        while (i < length) {
             action(i, parent.elements[offset + i])
+            if (parent.modCount != expected) throwConcurrentModification()
             i++
         }
     }
@@ -202,14 +223,27 @@ class KTypeSubList @PublishedApi internal constructor(
         return true
     }
 
-    operator fun iterator(): KTypeIterator = ViewIterator(this)
+    operator fun iterator(): KTypeIterator {
+        checkParent()
+        return ViewIterator(this)
+    }
 
+    /** Compares the parent's modCount as [forEach] does, and like the list's iterator, once per element plus once at the end. */
     private class ViewIterator(private val view: KTypeSubList) : KTypeIterator() {
+        private val expected = view.parent.modCount
         private var next = 0
 
-        override fun hasNext(): Boolean = next < view.size
+        override fun hasNext(): Boolean {
+            if (next < view.length) return true
+            if (view.parent.modCount != expected) throwConcurrentModification()
+            return false
+        }
 
-        override fun nextKType(): KType = view[next++]
+        override fun nextKType(): KType {
+            if (view.parent.modCount != expected) throwConcurrentModification()
+            if (next >= view.length) throwEmpty()
+            return view.parent.elements[view.offset + next++]
+        }
     }
 
     /** Nested views point at the parent directly, so they do not add a level of indirection. */

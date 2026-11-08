@@ -30,15 +30,15 @@ fun KTypeList.addAll(values: Iterable<KType>) {
 fun KTypeArray.toKTypeList(): KTypeList = KTypeList(copyOf(), size)
 
 //#if K_HAS_RANGE
-/** Does not box, unlike the `Iterable` overload that this one takes precedence over. */
-fun KTypeRange.toKTypeList(): KTypeList {
+/** Takes a range, `step`, or `downTo`. Does not box, unlike the `Iterable` overload that this one takes precedence over. */
+fun KTypeProgression.toKTypeList(): KTypeList {
     val result = KTypeList()
-    if (isEmpty()) return result
-    var value = first
-    while (true) {
-        result.add(value)
-        if (value == last) return result
-        value++
-    }
+    result.addAll(this)
+    return result
+}
+
+/** Takes a range, `step`, or `downTo`. Does not box, unlike the `Iterable` overload that this one takes precedence over. */
+fun KTypeList.addAll(values: KTypeProgression) {
+    for (value in values) add(value)
 }
 //#endif

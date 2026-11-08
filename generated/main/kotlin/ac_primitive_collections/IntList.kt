@@ -453,7 +453,15 @@ class IntList @PublishedApi internal constructor(
         private val expected = list.modCount
         private var next = 0
 
-        override fun hasNext(): Boolean = next < list.length
+        /**
+         * After a clear, the size alone would end the loop as if it had finished, so the end checks too. Only the
+         * end: [nextInt] already checks each element, and a loop can only stop silently here.
+         */
+        override fun hasNext(): Boolean {
+            if (next < list.length) return true
+            if (list.modCount != expected) throwConcurrentModification()
+            return false
+        }
 
         override fun nextInt(): Int {
             if (list.modCount != expected) throwConcurrentModification()
@@ -462,7 +470,7 @@ class IntList @PublishedApi internal constructor(
         }
     }
 
-    /** Returns a same-typed list. Conversions to other element types arrive with those types. */
+    /** Returns a same-typed list. Conversions to other element types are `mapToLong` and so on. */
     inline fun map(transform: (Int) -> Int): IntList {
         val result = IntList(length)
         forEach { result.add(transform(it)) }

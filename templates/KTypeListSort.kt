@@ -24,11 +24,21 @@ fun KTypeList.sortWith(comparator: KTypeComparator, from: Int, to: Int) {
 inline fun KTypeList.sortBy(selector: (KType) -> Int) {
     val keys = LongArray(length)
     forEachIndexed { index, value -> keys[index] = packKeyAndIndex(selector(value), index) }
-    applySortedKeys(keys)
+    applySortedIndices(sortedIndices(keys))
 }
 
+/** Sorts stably by a Long key without a comparator. */
+inline fun KTypeList.sortByLong(selector: (KType) -> Long) {
+    val keys = LongArray(length)
+    forEachIndexed { index, value -> keys[index] = selector(value) }
+    applySortedIndices(sortedIndicesByKey(keys))
+}
+
+/** Sorts stably by a Double key without a comparator, in the order of `Double.compareTo`. */
+inline fun KTypeList.sortByDouble(selector: (KType) -> Double) = sortByLong { totalOrderKey(selector(it)) }
+
 /** Returns the indices that sort the list, keeping equal elements in their original order. */
-fun KTypeList.argsort(): IntArray = argsortBy { it }
+fun KTypeList.argsort(): IntArray = K_ARGSORT(this)
 
 /** Returns the indices that sort the list by an Int key, keeping ties in their original order. */
 inline fun KTypeList.argsortBy(selector: (KType) -> Int): IntArray {
@@ -37,9 +47,18 @@ inline fun KTypeList.argsortBy(selector: (KType) -> Int): IntArray {
     return sortedIndices(keys)
 }
 
+/** Returns the indices that sort the list by a Long key, keeping ties in their original order. */
+inline fun KTypeList.argsortByLong(selector: (KType) -> Long): IntArray {
+    val keys = LongArray(length)
+    forEachIndexed { index, value -> keys[index] = selector(value) }
+    return sortedIndicesByKey(keys)
+}
+
+/** Returns the indices that sort the list by a Double key in the order of `Double.compareTo`, keeping ties in their original order. */
+inline fun KTypeList.argsortByDouble(selector: (KType) -> Double): IntArray = argsortByLong { totalOrderKey(selector(it)) }
+
 @PublishedApi
-internal fun KTypeList.applySortedKeys(keys: LongArray) {
-    val indices = sortedIndices(keys)
+internal fun KTypeList.applySortedIndices(indices: IntArray) {
     val source = toKTypeArray()
     var i = 0
     while (i < indices.size) {

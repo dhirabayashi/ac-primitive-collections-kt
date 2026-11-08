@@ -17,6 +17,11 @@ class CodegenTest {
         "DoubleIntMaxHeap", "DoubleIntMinHeap", "DoubleLongMaxHeap", "DoubleLongMinHeap", "DoubleObjMaxHeap", "DoubleObjMinHeap",
     )
 
+    private val elementTypes = listOf("Int", "Long", "Double", "Char")
+    private val conversions = elementTypes.flatMap { source -> (elementTypes - source).map { "${source}ListMapTo$it" } }
+    private val lists = elementTypes.flatMap { listOf("${it}List", "${it}ListConversions", "${it}ListSort", "${it}SubList") }
+    private val listTests = elementTypes.flatMap { listOf("${it}ListDifferentialTest", "${it}ListTest", "${it}SubListTest") }
+
     private fun names(generated: Map<String, String>) =
         generated.keys.map { it.removePrefix("ac_primitive_collections/").removeSuffix(".kt") }.toSet()
 
@@ -25,13 +30,13 @@ class CodegenTest {
 
     @Test
     fun generatesExactlyThePlannedLibraryFiles() {
-        assertEquals((pairHeaps + listOf("IntList", "IntListConversions", "IntListSort", "IntSubList")).toSet(), names(main))
+        assertEquals((pairHeaps + lists + conversions).toSet(), names(main))
     }
 
     @Test
     fun generatesExactlyThePlannedTestFiles() {
         assertEquals(
-            (pairHeaps.map { it + "Test" } + listOf("IntListDifferentialTest", "IntListTest", "IntSubListTest")).toSet(),
+            (pairHeaps.map { it + "Test" } + listTests + conversions.map { it + "Test" }).toSet(),
             names(test),
         )
     }

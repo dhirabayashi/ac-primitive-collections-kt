@@ -13,6 +13,14 @@ import kotlin.test.assertTrue
 /** Hand-written expectations. The differential test cannot catch a spec misread that java.util shares. */
 class KTypeListTest {
     private fun v(i: Int): KType = i.toKType()
+
+    /** `Double.MIN_VALUE` is the smallest positive value, so it does not sort first. */
+    //#if K_FLOATING
+    private val lowest: KType = KType.NEGATIVE_INFINITY
+    //#else
+    private val lowest: KType = KType.MIN_VALUE
+    //#endif
+
     private fun listOfInts(vararg values: Int) = KTypeList(values.size) { v(values[it]) }
     private fun assertList(list: KTypeList, vararg expected: Int) {
         assertEquals(expected.map { v(it) }, list.toList())
@@ -60,6 +68,30 @@ class KTypeListTest {
         val nearMax = (KType.MAX_VALUE - 1)..KType.MAX_VALUE
         assertEquals(listOf(KType.MAX_VALUE - 1, KType.MAX_VALUE), nearMax.toKTypeList().toList())
     }
+
+    @Test
+    fun fromProgression() {
+        assertList((v(1)..v(5) step 2).toKTypeList(), 1, 3, 5)
+        assertList((v(1)..v(6) step 2).toKTypeList(), 1, 3, 5)
+        assertList((v(3) downTo v(1)).toKTypeList(), 3, 2, 1)
+        assertList((v(1) downTo v(3)).toKTypeList())
+        assertList((v(2)..v(2) step 2).toKTypeList(), 2)
+        assertList((v(2) downTo v(2)).toKTypeList(), 2)
+        val nearMin = (KType.MIN_VALUE + 1) downTo KType.MIN_VALUE
+        assertEquals(listOf(KType.MIN_VALUE + 1, KType.MIN_VALUE), nearMin.toKTypeList().toList())
+        val pastMax = (KType.MAX_VALUE - 2)..KType.MAX_VALUE step 2
+        assertEquals(listOf(KType.MAX_VALUE - 2, KType.MAX_VALUE), pastMax.toKTypeList().toList())
+    }
+
+    @Test
+    fun addAllProgressions() {
+        val list = KTypeList()
+        list.addAll(v(1)..v(2))
+        list.addAll(v(5) downTo v(4))
+        list.addAll(v(6)..v(8) step 2)
+        list.addAll(v(2)..v(1))
+        assertList(list, 1, 2, 5, 4, 6, 8)
+    }
     //#endif
 
     @Test
@@ -68,7 +100,7 @@ class KTypeListTest {
         assertEquals(v(2), list[1])
         list[1] = v(9)
         assertEquals(v(9), list[1])
-        list[1] += v(1)
+        list[1] += 1
         assertEquals(v(10), list[1])
         for (bad in intArrayOf(-1, 3)) {
             assertFailsWith<IndexOutOfBoundsException> { list[bad] }
@@ -103,7 +135,10 @@ class KTypeListTest {
                 { it.fill(v(9), from, to) }, { it.indexOfMin(from, to) }, { it.indexOfMax(from, to) }, { it.min(from, to) },
                 { it.max(from, to) }, { it.removeRange(from, to) }, { it.reverse(from, to) }, { it.rotate(1, from, to) },
                 { it.shuffle(Random(1), from, to) }, { it.slice(from, to) }, { it.sort(from, to) },
-                { it.sortDescending(from, to) }, { it.sum(from, to) }, { it.sortWith({ _, _ -> 0 }, from, to) },
+                { it.sortDescending(from, to) }, { it.sortWith({ _, _ -> 0 }, from, to) },
+                //#if K_NUMERIC
+                { it.sum(from, to) },
+                //#endif
                 { it.subList(from, to) },
             )
             for (check in checks) {
@@ -183,7 +218,9 @@ class KTypeListTest {
         assertEquals(v(7), list.maxOrDefault(v(7)))
         assertEquals(-1, list.lastIndex)
         assertTrue(list.indices.isEmpty())
+        //#if K_NUMERIC
         assertEquals(K_SUM_ZERO, list.sum())
+        //#endif
         assertEquals("[]", list.toString())
         assertFalse(list.nextPermutation())
     }
@@ -296,7 +333,7 @@ class KTypeListTest {
     @Test
     fun removeIfCompacts() {
         val list = listOfInts(1, 2, 3, 4)
-        assertTrue(list.removeIf { it.toInt() % 2 == 0 })
+        assertTrue(list.removeIf { K_TO_INT(it) % 2 == 0 })
         assertList(list, 1, 3)
         assertFalse(list.removeIf { false })
         assertList(list, 1, 3)
@@ -406,7 +443,9 @@ class KTypeListTest {
         assertEquals(-1, list.lastIndexOf(v(3)))
         assertEquals(2, list.lowerBound(v(3)))
         assertFalse(v(3) in list)
+        //#if K_NUMERIC
         assertEquals(K_TO_SUM(v(3)), list.sum())
+        //#endif
         assertEquals(v(2), list.max())
     }
 
@@ -453,12 +492,17 @@ class KTypeListTest {
         assertList(list, 3, 4, 5, 2, 1)
         list.fill(v(0), 3, 5)
         assertList(list, 3, 4, 5, 0, 0)
+        //#if K_NUMERIC
         assertEquals(K_TO_SUM(v(9)), list.sum(1, 3))
+        //#endif
         assertEquals(v(4), list.min(1, 3))
         assertEquals(v(5), list.max(1, 3))
         for (bad in listOf<(KTypeList) -> Unit>(
             { it.sort(0, 6) }, { it.sortDescending(0, 6) }, { it.reverse(0, 6) },
-            { it.rotate(1, 0, 6) }, { it.fill(v(0), 0, 6) }, { it.sum(0, 6) }, { it.min(0, 6) }, { it.max(0, 6) },
+            { it.rotate(1, 0, 6) }, { it.fill(v(0), 0, 6) }, { it.min(0, 6) }, { it.max(0, 6) },
+            //#if K_NUMERIC
+            { it.sum(0, 6) },
+            //#endif
             { it.shuffle(Random(1), 0, 6) },
         )) {
             assertFailsWith<IndexOutOfBoundsException> { bad(list) }
@@ -555,7 +599,7 @@ class KTypeListTest {
             reversed.sortWith { a, b -> b.compareTo(a) }
             assertEquals(descending, reversed.toList())
             val by = permutation.copy()
-            by.sortBy { -it.toInt() }
+            by.sortBy { -K_TO_INT(it) }
             assertEquals(descending, by.toList())
         } while (permutation.nextPermutation())
     }
@@ -584,19 +628,19 @@ class KTypeListTest {
                 assertEquals(expected, natural.toList(), "n=$n")
                 // Sort by the low bits only, and check against the stable standard sort.
                 val byLowBits = list.copy()
-                byLowBits.sortWith { a, b -> (a.toInt() and 3).compareTo(b.toInt() and 3) }
-                assertEquals(list.toList().sortedBy { it.toInt() and 3 }, byLowBits.toList(), "n=$n")
+                byLowBits.sortWith { a, b -> (K_TO_INT(a) and 3).compareTo(K_TO_INT(b) and 3) }
+                assertEquals(list.toList().sortedBy { K_TO_INT(it) and 3 }, byLowBits.toList(), "n=$n")
                 val keyed = list.copy()
-                keyed.sortBy { it.toInt() and 3 }
-                assertEquals(list.toList().sortedBy { it.toInt() and 3 }, keyed.toList(), "n=$n")
+                keyed.sortBy { K_TO_INT(it) and 3 }
+                assertEquals(list.toList().sortedBy { K_TO_INT(it) and 3 }, keyed.toList(), "n=$n")
                 assertEquals(
                     list.toList().indices.sortedBy { list[it] },
                     list.argsort().toList(),
                     "n=$n",
                 )
                 assertEquals(
-                    list.toList().indices.sortedBy { list[it].toInt() and 3 },
-                    list.argsortBy { it.toInt() and 3 }.toList(),
+                    list.toList().indices.sortedBy { K_TO_INT(list[it]) and 3 },
+                    list.argsortBy { K_TO_INT(it) and 3 }.toList(),
                     "n=$n",
                 )
             }
@@ -624,7 +668,7 @@ class KTypeListTest {
         list.sortWith({ a, b -> a.compareTo(b) }, 5, 30)
         assertEquals(
             (1..40).reversed().toList().subList(0, 5) + (11..35).toList() + (1..10).reversed().toList(),
-            list.toList().map { it.toInt() },
+            list.toList().map { K_TO_INT(it) },
         )
         assertFailsWith<IndexOutOfBoundsException> { list.sortWith({ _, _ -> 0 }, 0, 41) }
     }
@@ -642,9 +686,109 @@ class KTypeListTest {
 
     @Test
     fun argsortOrdersExtremeKeysAndKeepsTies() {
-        val list = KTypeList(4) { i -> listOf(KType.MAX_VALUE, KType.MIN_VALUE, K_ZERO, KType.MIN_VALUE)[i] }
+        val list = KTypeList(4) { i -> listOf(KType.MAX_VALUE, lowest, v(1), lowest)[i] }
         assertContentEquals(intArrayOf(1, 3, 2, 0), list.argsort())
     }
+
+    @Test
+    fun sortByLongOrdersExtremeKeysAndKeepsTies() {
+        val keys = longArrayOf(Long.MAX_VALUE, Long.MIN_VALUE, -1L, 1L shl 40, -1L, 0L)
+        val list = listOfInts(0, 1, 2, 3, 4, 5)
+        val expected = listOf(1, 2, 4, 5, 3, 0)
+        assertEquals(expected, list.argsortByLong { keys[K_TO_INT(it)] }.toList())
+        list.sortByLong { keys[K_TO_INT(it)] }
+        assertEquals(expected.map { v(it) }, list.toList())
+        assertTrue(KTypeList().argsortByLong { 0L }.isEmpty())
+    }
+
+    @Test
+    fun sortByDoubleUsesTheOrderOfCompareTo() {
+        val keys = doubleArrayOf(Double.NaN, 0.0, -0.0, Double.NEGATIVE_INFINITY, 1.5, Double.POSITIVE_INFINITY, -1.5, 0.0)
+        val list = listOfInts(0, 1, 2, 3, 4, 5, 6, 7)
+        val expected = listOf(3, 6, 2, 1, 7, 4, 5, 0)
+        assertEquals(expected, list.argsortByDouble { keys[K_TO_INT(it)] }.toList())
+        list.sortByDouble { keys[K_TO_INT(it)] }
+        assertEquals(expected.map { v(it) }, list.toList())
+    }
+
+    /** The size alone would end this loop as if it had finished. */
+    @Test
+    fun clearingTheListFromAForInLoopFails() {
+        val list = listOfInts(1, 2, 3)
+        assertFailsWith<ConcurrentModificationException> { for (x in list) list.clear() }
+        val cleared = listOfInts(1, 2)
+        val withoutHasNext = cleared.iterator()
+        cleared.clear()
+        assertFailsWith<ConcurrentModificationException> { withoutHasNext.next() }
+        val iterator = listOfInts(1, 2).iterator()
+        assertTrue(iterator.hasNext())
+        assertEquals(v(1), iterator.next())
+        assertTrue(iterator.hasNext())
+        assertEquals(v(2), iterator.next())
+        assertFalse(iterator.hasNext())
+    }
+
+    /** Plain tries: inlining through assertFailsWith as well would hide these branches from the coverage tool. */
+    @Test
+    fun keySelectorsCannotChangeTheList() {
+        fun failsOnChange(sort: (KTypeList) -> Unit): Boolean {
+            val list = listOfInts(1, 2)
+            return try {
+                sort(list)
+                false
+            } catch (_: ConcurrentModificationException) {
+                true
+            }
+        }
+        assertTrue(failsOnChange { list -> list.sortByLong { list.clear(); 0L } })
+        assertTrue(failsOnChange { list -> list.sortByDouble { list.clear(); 0.0 } })
+        assertTrue(failsOnChange { list -> list.argsortByLong { list.clear(); 0L } })
+        assertTrue(failsOnChange { list -> list.argsortByDouble { list.clear(); 0.0 } })
+    }
+
+    //#if K_FLOATING
+    @Test
+    fun everythingUsesTheTotalOrder() {
+        val zero = 0.0
+        val negativeZero = -0.0
+        val nan = Double.NaN
+        val list = ktypeListOf(nan, zero, Double.POSITIVE_INFINITY, negativeZero, Double.NEGATIVE_INFINITY)
+        val sorted = listOf(Double.NEGATIVE_INFINITY, negativeZero, zero, Double.POSITIVE_INFINITY, nan)
+        assertEquals(sorted, list.sorted().toList())
+        assertEquals(sorted, list.copy().also { it.sortWith { a, b -> a.compareTo(b) } }.toList())
+        assertEquals(listOf(4, 3, 1, 2, 0), list.argsort().toList())
+        assertEquals(nan, list.max())
+        assertEquals(Double.NEGATIVE_INFINITY, list.min())
+        assertEquals(0, list.indexOf(nan))
+        assertEquals(3, list.indexOf(negativeZero))
+        assertEquals(1, list.indexOf(zero))
+        assertTrue(nan in list)
+        assertEquals(2, ktypeListOf(zero, negativeZero).distinct().size)
+        assertEquals(1, ktypeListOf(nan, nan).distinct().size)
+        val adjacent = ktypeListOf(zero, negativeZero, nan, nan)
+        adjacent.dedupe()
+        assertEquals(listOf(zero, negativeZero, nan), adjacent.toList())
+        assertNotEquals(ktypeListOf(zero), ktypeListOf(negativeZero))
+        assertEquals(ktypeListOf(nan), ktypeListOf(nan))
+        assertEquals(0, list.sorted().lowerBound(Double.NEGATIVE_INFINITY))
+        assertEquals(2, list.sorted().lowerBound(zero))
+        assertEquals(4, list.sorted().lowerBound(nan))
+        assertEquals(5, list.sorted().upperBound(nan))
+        assertTrue(ktypeListOf(nan, zero).sum().isNaN())
+    }
+    //#endif
+
+    //#if K_NUMERIC
+    @Test
+    fun sumOfTheElementType() {
+        assertEquals(K_TO_SUM(v(6)), listOfInts(1, 2, 3).sum())
+    }
+    //#else
+    @Test
+    fun sumOfALongSelectorStillWorks() {
+        assertEquals(6L, listOfInts(1, 2, 3).sumOf { K_TO_INT(it).toLong() })
+    }
+    //#endif
 
     @Test
     fun iteration() {
@@ -688,25 +832,27 @@ class KTypeListTest {
     @Test
     fun higherOrder() {
         val list = listOfInts(1, 2, 3, 4)
-        assertList(list.map { v(it.toInt() * 2) }, 2, 4, 6, 8)
-        assertList(list.filter { it.toInt() % 2 == 0 }, 2, 4)
+        assertList(list.map { v(K_TO_INT(it) * 2) }, 2, 4, 6, 8)
+        assertList(list.filter { K_TO_INT(it) % 2 == 0 }, 2, 4)
         assertTrue(list.any { it == v(4) })
         assertFalse(list.any { it == v(5) })
-        assertTrue(list.all { it.toInt() > 0 })
-        assertFalse(list.all { it.toInt() > 1 })
+        assertTrue(list.all { K_TO_INT(it) > 0 })
+        assertFalse(list.all { K_TO_INT(it) > 1 })
         assertTrue(list.none { it == v(5) })
         assertFalse(list.none { it == v(4) })
-        assertEquals(2, list.count { it.toInt() > 2 })
-        assertEquals(10, list.fold(0) { acc, x -> acc + x.toInt() })
-        assertEquals(11L, list.fold(1L) { acc, x -> acc + x.toLong() })
-        assertEquals(10.5, list.fold(0.5) { acc, x -> acc + x.toDouble() })
-        assertEquals(20L, list.sumOf { it.toLong() * 2 })
+        assertEquals(2, list.count { K_TO_INT(it) > 2 })
+        assertEquals(10, list.fold(0) { acc, x -> acc + K_TO_INT(x) })
+        assertEquals(11L, list.fold(1L) { acc, x -> acc + K_TO_INT(x).toLong() })
+        assertEquals(10.5, list.fold(0.5) { acc, x -> acc + K_TO_INT(x).toDouble() })
+        assertEquals(20L, list.sumOf { K_TO_INT(it).toLong() * 2 })
     }
 
     @Test
     fun aggregates() {
         val list = listOfInts(3, 1, 4, 1, 5, 5)
+        //#if K_NUMERIC
         assertEquals(K_TO_SUM(v(19)), list.sum())
+        //#endif
         assertEquals(v(1), list.min())
         assertEquals(v(5), list.max())
         assertEquals(v(1), list.minOrDefault(v(9)))
@@ -717,8 +863,8 @@ class KTypeListTest {
 
     @Test
     fun aggregatesOfBoundaryValues() {
-        val list = KTypeList(3) { i -> listOf(KType.MIN_VALUE, K_ZERO, KType.MAX_VALUE)[i] }
-        assertEquals(KType.MIN_VALUE, list.min())
+        val list = KTypeList(3) { i -> listOf(lowest, v(1), KType.MAX_VALUE)[i] }
+        assertEquals(lowest, list.min())
         assertEquals(KType.MAX_VALUE, list.max())
     }
 
@@ -817,15 +963,17 @@ class KTypeListTest {
     @Test
     fun text() {
         val a = listOfInts(1, 2)
-        assertEquals("[1, 2]", a.toString())
-        assertEquals("1, 2", a.joinToString())
-        assertEquals("<1|2>", a.joinToString("|", "<", ">"))
+        val one = v(1).toString()
+        val two = v(2).toString()
+        assertEquals("[$one, $two]", a.toString())
+        assertEquals("$one, $two", a.joinToString())
+        assertEquals("<$one|$two>", a.joinToString("|", "<", ">"))
         val builder = StringBuilder("x")
         a.appendTo(builder)
-        assertEquals("x1 2", builder.toString())
+        assertEquals("x$one $two", builder.toString())
         builder.clear()
         a.appendTo(builder, ",")
-        assertEquals("1,2", builder.toString())
+        assertEquals("$one,$two", builder.toString())
     }
 
     @Test

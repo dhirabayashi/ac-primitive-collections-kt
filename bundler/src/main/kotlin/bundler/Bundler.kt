@@ -39,39 +39,51 @@ object Bundler {
     fun bundle(main: SourceFile, library: List<SourceFile>, options: BundleOptions): BundleResult {
         checkLibrary(library).takeIf { it.isNotEmpty() }?.let { throw BundleException(it.joinToString("\n")) }
 
-        val owners = HashMap<String, MutableList<SourceFile>>()
-        for (file in library) {
-            for (declaration in file.declarations) owners.getOrPut(declaration.name) { ArrayList() } += file
-        }
         checkUserImports(main)
-        val usesLibrary = main.imports.any { isLibraryImport(it) }
-        val included = LinkedHashSet<SourceFile>()
-        if (usesLibrary) {
-            val pending = ArrayDeque<SourceFile>()
-            fun visit(from: SourceFile) {
-                // Only the library's own files have members worth skipping: user code may call the extension.
-                val members = if (from === main) emptySet() else from.memberFunctions
-                for (identifier in from.identifiers) {
-                    if (identifier in members) continue
-                    for (owner in owners[identifier].orEmpty()) {
-                        if (owner !== from && included.add(owner)) pending += owner
-                    }
-                }
-            }
-            visit(main)
-            while (pending.isNotEmpty()) visit(pending.removeFirst())
-        }
+        val included = if (main.imports.any { isLibraryImport(it) }) findIncluded(main, library) else emptySet()
         val ordered = included.sortedBy { it.name }
         checkConflicts(main, ordered)
-        checkInternals(main, library)
 
-        val warnings = userShadowingWarnings(main, ordered).toMutableList()
+        val warnings = (userShadowingWarnings(main, ordered) + internalUseWarnings(main, library)).toMutableList()
         val source = render(main, ordered, options)
         val bytes = source.toByteArray().size
         if (bytes > options.sizeWarningBytes) {
             warnings += "The output is $bytes bytes, above the ${options.sizeWarningBytes}-byte warning threshold."
         }
         return BundleResult(source, ordered.map { it.name }, warnings)
+    }
+
+    /**
+     * Follows names to a fixed point. Names alone would pull in every element type, because `sortBy` and
+     * others exist once per type. So an extension on a library type counts only once that type is included:
+     * code that holds a value of the type has to reach the type's file through some name.
+     */
+    private fun findIncluded(main: SourceFile, library: List<SourceFile>): Set<SourceFile> {
+        val typeOwners = HashMap<String, SourceFile>()
+        for (file in library) {
+            for (declaration in file.declarations) if (declaration.isType) typeOwners[declaration.name] = file
+        }
+        val included = LinkedHashSet<SourceFile>()
+        fun isReachable(declaration: Declaration): Boolean {
+            val receiver = declaration.receiver?.substringBefore('<')?.removeSuffix("?") ?: return true
+            val owner = typeOwners[receiver] ?: return true
+            return owner in included
+        }
+        val mentioned = HashSet(main.identifiers)
+        var changed = true
+        while (changed) {
+            changed = false
+            for (file in library) {
+                if (file !in included && file.declarations.any { it.name in mentioned && isReachable(it) }) {
+                    included += file
+                    // Every name counts, members' too: a member may hand its work to a same-named extension in
+                    // another file. A missing file is a compile error in a contest, an extra one only costs bytes.
+                    mentioned += file.identifiers
+                    changed = true
+                }
+            }
+        }
+        return included
     }
 
     fun isLibraryImport(path: String) = path == "$LIBRARY_PACKAGE.*" || path.startsWith("$LIBRARY_PACKAGE.")
@@ -94,16 +106,19 @@ object Bundler {
         if (problems.isNotEmpty()) throw BundleException(problems.joinToString("\n"))
     }
 
-    /** Pasted code can reach `internal` declarations that `import` cannot, so it would break at install time. */
-    private fun checkInternals(main: SourceFile, library: List<SourceFile>) {
+    /**
+     * Pasted code can reach `internal` declarations that `import` cannot, so it would break at install time.
+     * Only a warning: the scan cannot tell these from a user's local variable, and pasted code compiles either way.
+     */
+    private fun internalUseWarnings(main: SourceFile, library: List<SourceFile>): List<String> {
+        if (main.imports.none(::isLibraryImport)) return emptyList()
         val userDeclared = main.declarations.mapTo(HashSet()) { it.name }
         val internalNames = library.flatMap { file ->
             file.declarations.filter { it.visibility != Declaration.Visibility.PUBLIC }.map { it.name }
         }
         val used = internalNames.filter { it in main.identifiers && it !in userDeclared }.distinct().sorted()
-        if (used.isNotEmpty()) {
-            throw BundleException("These are internal to the library, so the code would not compile with import: ${used.joinToString()}")
-        }
+        if (used.isEmpty()) return emptyList()
+        return listOf("These names are internal to the library: ${used.joinToString()}. This is fine for your own local variables. Calling the library's would compile when pasted, but not with import.")
     }
 
     /** Library code pasted next to user code resolves names against the user's declarations too. */

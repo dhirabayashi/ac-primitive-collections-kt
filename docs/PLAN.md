@@ -242,7 +242,9 @@ val c = map.findSlot(k); if (c >= 0) map.valueAt(c)
 |---|---|
 | 標準コレクションへ | `IntList` / `IntDeque` → `toList()`、`toMutableList()`。`IntHashSet` / `IntTreeSet` → `toSet()`、`toMutableSet()`。`IntIntHashMap` / `IntIntTreeMap` → `toMap()`、`toMutableMap()`。ヒープ → `toUnorderedList()`、`toSortedList()` |
 | 標準コレクションから | `Iterable<Int>.toIntList()`、`Iterable<Int>.toIntHashSet()`、`Iterable<Int>.toIntTreeSet()`、`Map<Int, Int>.toIntIntHashMap()`、`Map<Int, Int>.toIntIntTreeMap()` など。`addAll(Iterable<Int>)` |
-| 配列・範囲から(ボクシングなし) | `IntArray.toIntList()`、`IntRange.toIntList()` など。ACL は配列を受け取るので、`toIntArray()` と合わせて最も重要な経路 |
+| 配列・範囲から(ボクシングなし) | `IntArray.toIntList()`、`IntProgression.toIntList()`、`addAll(IntProgression)` など。`IntProgression` は `1..n`、`1..n step 2`、`n downTo 1` のすべてを受ける。受け手が `IntRange` だと `step` と `downTo` は `Iterable` 版に解決され、警告なしでボクシングする。ACL は配列を受け取るので、`toIntArray()` と合わせて最も重要な経路 |
+
+**`Iterable` を受ける API には、範囲を受ける版を必ず並べます。** 対象は `Int`、`Long`、`Char` です(`toIntHashSet` など、これから作るものも含みます)。ボクシングはライブラリの中で起きるので、利用コードの検査では見えません。`SourceRulesTest` の `iterableOverloadsHaveProgressionOverloads` が、同じファイルに範囲版がないことを検出します。
 
 順序の仕様:
 
@@ -365,9 +367,9 @@ K はキー、V は値です。ソース上で約 100 クラスを見込みま�
 | 削除 | `removeAt`、`removeLast`、`removeFirst`、`removeValue`、`removeRange`、`swapRemove`、`removeIf {}`、`truncate(n)` |
 | 容量 | `ensureCapacity`、`trimToSize`、`resize(n, fill)`、`capacity` |
 | 検索 | `contains`、`indexOf`、`lastIndexOf`、`binarySearch`、`lowerBound`、`upperBound`、`indexOfFirst {}`、`indexOfLast {}` |
-| 並べ替え | `sort`、`sortDescending`、`sort(from, to)`、`sortWith(IntComparator)`、`sortBy {}`、`argsort`、`reverse`、`shuffle(Random)`、`swap`、`rotate`、`fill`、`dedupe`(隣接重複の除去)、`nextPermutation` |
-| 高階 | `forEach`、`forEachIndexed`、`map`、`mapToLong` などの型変換、`filter`、`any`、`all`、`none`、`count`、`fold`(§5.3.2)、`sumOf`(§5.3.2) |
-| 集計 | `sum`、`min`、`max`、`minOrDefault`、`maxOrDefault`、`indexOfMin`、`indexOfMax` |
+| 並べ替え | `sort`、`sortDescending`、`sort(from, to)`、`sortWith(IntComparator)`、`sortBy {}`、`sortByLong {}`、`sortByDouble {}`、`argsort`、`argsortBy {}`、`argsortByLong {}`、`argsortByDouble {}`、`reverse`、`shuffle(Random)`、`swap`、`rotate`、`fill`、`dedupe`(隣接重複の除去)、`nextPermutation` |
+| 高階 | `forEach`、`forEachIndexed`、`map`、`mapToLong` などの型変換(§5.3.3)、`filter`、`any`、`all`、`none`、`count`、`fold`(§5.3.2)、`sumOf`(§5.3.2) |
+| 集計 | `sum`(`Char` にはなし)、`min`、`max`、`minOrDefault`、`maxOrDefault`、`indexOfMin`、`indexOfMax` |
 | 反復 | `operator iterator()`(`kotlin.collections.IntIterator` を返す)、`indices`、`slice`、逆順 `forEachReversed` |
 
 #### 5.3.1 `subList`(`IntSubList`)
@@ -377,8 +379,8 @@ K はキー、V は値です。ソース上で約 100 クラスを見込みま�
 | 分類 | 操作 |
 |---|---|
 | 要素 | `[]`、`[] =`、`first`、`last`、`size`、`indices`、`in` |
-| 変更(親に反映) | `sort`、`sortDescending`、`sortWith`、`sortBy {}`、`reverse`、`shuffle`、`fill`、`swap`、`rotate`、`clear()`(親から範囲を削除) |
-| 検索・集計 | `indexOf`、`binarySearch`、`lowerBound`、`upperBound`、`sum`、`min`、`max`、`count {}`、`any {}`、`all {}` |
+| 変更(親に反映) | `sort`、`sortDescending`、`sortWith`、`sortBy {}`、`sortByLong {}`、`sortByDouble {}`、`reverse`、`shuffle`、`fill`、`swap`、`rotate`、`clear()`(親から範囲を削除) |
+| 検索・集計 | `indexOf`、`binarySearch`、`lowerBound`、`upperBound`、`sum`(`Char` にはなし)、`min`、`max`、`count {}`、`any {}`、`all {}` |
 | 反復 | `for (x in sub)`、`forEach`、`forEachIndexed` |
 | 変換 | `subList`(入れ子は親を直接指すように平坦化)、`toIntList()`、`toIntArray()`、`toList()`、`joinToString()`、`contentEquals(IntList / IntSubList)` |
 
@@ -386,6 +388,8 @@ K はキー、V は値です。ソース上で約 100 クラスを見込みま�
 
 - **長さは固定です。** `add` や `removeAt` は持ちません(例外は `clear()` のみ)。`list.subList(a, b).clear()` は Java でよく使う書き方なので対応します。
 - **親の構造変更を検出します。** 親に `add` や `removeAt` などを行った後でビューを使うと例外になります。ずれた範囲を読んで黙って誤答になるのを防ぐためです。`set` など構造が変わらない変更は検出せず、ビューにも反映されます。
+- **反復中のビューの `clear()` も検出します。** ラムダや for-in の本体で `clear()` を呼ぶと例外になります。黙って止めると、`all` が 1 要素しか見ずに `true` を返すなどの誤答になるためです。`List` の for-in も、`hasNext` で同じように検出します。
+- **反復の検査は、1 要素につき 1 回と、終了時の 1 回です。** すべてのコレクションの `forEach` とイテレータに適用します。イテレータでは要素ごとの検査を `next` が行い、`hasNext` は `false` を返すとき(黙って止まりうる唯一の場所)だけ検査します。ビューは開始時の親の `modCount` と比べます。ビューからの変更(`clear` を含む)も親の `modCount` を進めるので、1 回の比較で両側の変更を検出できます。`main` と比べると、`List` の for-in は同じで、`SubList` の for-in は 2 回から 1 回に、`forEach` は 1 回のままです。
 - **検出には `IntList` の `modCount` を使います。** JMH(arm64)では、`modCount` なしとの差は n = 1000 で約 10% でした(`ops/ms` で 757 と 837。`ArrayList` は 429)。`modCount++` を `add` の最後に置くことが重要で、先頭に置くと約 2 倍遅くなりました。これを受けて検出方式は変更しません。
 - **確保:** 呼び出しごとに 1 オブジェクトを確保します。ホットループの中では、`IntList` の範囲引数つき API(`sort(from, to)` など)の方が確実です。
 - **バンドル:** `subList` を使っていない提出に `IntSubList` が含まれないように、`IntList` のメンバーではなく拡張関数として定義します。
@@ -394,8 +398,15 @@ K はキー、V は値です。ソース上で約 100 クラスを見込みま�
 
 #### 5.3.2 `fold` と `sumOf`(Phase 1 の実装で確定)
 
-- **`fold` は標準と同じ `fold<R>` にします。** `Int`、`Long`、`Double` の別々のオーバーロードにすると、`fold(0) { ... }` が曖昧でコンパイルエラーになります。ジェネリックでも、inline 展開後はコンパイラの最適化でボクシングが消えます。ただし**直接のループで書いたときだけ**で、`forEach` の上に書くとボクシングが残ります(Kotlin 2.2.10 で確認。`MainKt` の厳格検査で回帰を検出)。
+- **`fold` は標準と同じ `fold<R>` にします。** `Int`、`Long`、`Double` の別々のオーバーロードにすると、`fold(0) { ... }` が曖昧でコンパイルエラーになります。ジェネリックでも、inline 展開後はコンパイラの最適化でボクシングが消えます。ただし**直接のループで書いたときだけ**で、`forEach` の上に書くとボクシングが残ります(Kotlin 2.2.10 で確認。`MainKt` の厳格検査で回帰を検出)。**ジェネリックな inline 関数は、全キー型と、結果型 `Int`、`Long`、`Double`、`Char`、`Boolean` の組み合わせを `e2e/usage` から呼びます。** 結果がコンパイラの最適化次第で決まるのは、型引数を持つものだけです。ラムダの型がプリミティブで決まる `forEach` などは、展開してもボクシングしません。今の該当は `fold` だけで、`intlist-all` と `lists-other-types` で全組み合わせを呼んでいます。
 - **`sumOf` は `Long` を返すセレクタのみです。** `Int` と `Long` の両方を受けるには実験的機能(`@OverloadResolutionByLambdaReturnType`)が必要で、§1.4 に反します。`Int` のセレクタは `sumOf { it.toLong() }` と書きます。
+
+#### 5.3.3 全型への展開で決めたこと
+
+- **キーの型ごとに名前を分けます(`sortBy`、`sortByLong`、`sortByDouble`)。** 同じ `sortBy` でラムダの戻り値の型ごとにオーバーロードするには実験的機能(`@OverloadResolutionByLambdaReturnType`)が必要で、`sumOf` と同じく §1.4 に反します。`argsortBy` も同じです。
+- **`mapToLong` などの型変換は、組ごとに別のファイルの拡張関数にします(`IntListMapToLong` など 12 ファイル)。** 同じ型への変換は `map` です。メンバーや 1 つのファイルにまとめると、1 つの変換のために変換先のすべての型が提出に入ります。
+- **`Char` には `sum` を作りません。** `sumOf` は残します。
+- **`Double` はすべての操作で全順序です(§4.4)。** テストの基準には標準の `minOrNull` を使えません。`NaN` があると `NaN` を返すからです。
 
 ### 5.4 Deque(`IntDeque`)
 
@@ -552,8 +563,8 @@ Kotlin には `<<` がないので、`shl` / `shr` は `Int` と同じ中置関�
 | Char | `Arrays.sort`(JDK が計数ソートを使用) | なし | 自作不要 |
 | 降順 | 昇順 + 反転 | なし | 符号反転は使わない |
 | `argsort`、`sortBy { intKey }` | `(key.toLong() shl 32) or i` を Long ソート | | 比較関数不要で安定。実機で Long の `Arrays.sort` が速いので、Int キーで最速の見込み |
-| `sortBy { longKey }` | キー配列 + 添字の同時ソート、基数ソート | | 64 bit に収まらないため別実装 |
-| `sortBy { doubleKey }` | ビット変換で全順序の Long に変換 | | `-0.0` と `NaN` の順序を `Double.compare` と一致させる |
+| `sortByLong {}`、Long の `argsort` | 8 bit の LSD 基数ソートで添字を並べる(`KeySort.kt`) | | 64 bit に収まらないため別実装。比較関数が不要で安定。**未計測**で、採否は下の「ソートの採否」で決める |
+| `sortByDouble {}`、Double の `argsort` | ビット変換で全順序の Long に変換し、`sortByLong` と同じ処理 | | `-0.0` と `NaN` の順序を `Double.compare` と一致させる |
 | `sortWith(comparator)` | `IntComparator` + 反復版の pdqsort 系 / マージソート | | inline は再帰と巨大メソッドの制約があるため `fun interface` を使用 |
 | 安定ソート | 反復版マージソート | | 作業領域を再利用 |
 
@@ -712,6 +723,8 @@ JUnit 5 + kotlin-test を使います。操作列の実行器は自作して依�
 - **名前の短縮や難読化はしません。** ルールで問われるのはレビューを困難にする意図の有無で、短縮そのものが一律に禁止されているわけではありませんが、疑われる処理は避けます。空行とコメントの除去だけを任意で行います。
 - 出力サイズが上限を超えそうな場合は警告します。ソース長の上限は未確認です(§15)。
 - 手元では `import` で開発し、バンドラの出力を提出します。両方の動作の一致を E2E で確認します。
+- **依存は余分に含める側に倒します。** 取りこぼすとコンテスト中に CE になりますが、余分なファイルはサイズが増えるだけだからです。含めたファイルの識別子は、メンバーの名前も含めてすべて依存の候補にします(メンバーが同名の拡張関数に処理を任せることがあるため。除外していたときと比べて、`List` を使う提出が約 1.3 KB 増える)。そのため、`IntList.mapToDouble` と `DoubleList.argsort()` だけの提出にも、`IntListSort.kt` が入ります。
+- ライブラリの型への拡張関数は、その型のファイルが含まれているときだけ、名前の一致を依存と見なします。`sortBy` などは型ごとにあるので、名前だけで解決すると、1 つの型を使う提出に 4 型すべてが入るためです。ある型の値を持つコードは、どこかでその型の名前に到達するので、必要なものは漏れません。
 - コンテスト用は `origin` にある最新のタグ(`v` と数字だけのもの。比較は数値で行う)からバンドルします。今のチェックアウトには依存しません。手元の実行は作業ツリーのライブラリを使うので、提出に含むファイルが手元と異なるときと、タグにない名前を使っていそうなときは警告します。後者は利用者のローカル変数と区別できないので、エラーにはしません。
 - 過去問の提出では、`--allow-unpublished` で作業ツリーからバンドルできます(§9)。
 - 生成するソースは **Kotlin 2.2 の言語機能の範囲で書きます。** ジャッジの `kotlinc 2.2.10` でコンパイルされるためです。
@@ -726,7 +739,8 @@ Kotlin 2.2.10 の実験で、次の差を確認しました。いずれもコン
 | `import java.util.*` と併用して、同名のクラスを使う | エラー | 成功 | 公開名の衝突検査(§5.8.2) |
 | 利用者が `IntArray.lowerBound` を定義する | 成功(利用者側が優先) | エラー | バンドラが衝突を検出して、分かりやすく報告 |
 | 利用者が `class IntPair` を定義する | 成功 | エラー | 同上 |
-| ライブラリの `internal` を呼ぶ | エラー | 成功 | バンドラがトップレベルの名前を検出。**メンバー(`list.elements` など)は検出できない**(コンパイルすると提出が遅くなるため)。ジャッジ導入後に初めて気づく可能性があるが、使わないことで避ける |
+| 利用者がライブラリの内部名(`checkRange`、`DEFAULT_CAPACITY` など)をトップレベルに定義する | 成功 | 同じシグネチャならエラー | バンドラは名前だけで判定するので、引数が違って貼り付けても動く場合も、改名を求めるエラーにする。誤答にはならず、数秒で直せる。貼り付けは暫定手段で、内部名にすべて接頭辞を付ける読みにくさは導入後も残るので、根本対策は行わない(2026-11-08 に決定) |
+| ライブラリの `internal` を呼ぶ | エラー | 成功 | バンドラがトップレベルの名前を検出して**警告**する。ローカル変数と区別できず、貼り付けならコンパイルできるので、本番で提出を止めないようエラーにはしない。**メンバー(`list.elements` など)は検出できない**(コンパイルすると提出が遅くなるため)。ジャッジ導入後に初めて気づく可能性があるが、使わないことで避ける(2026-11-08 に所有者が確認) |
 
 結合処理にも、次の 2 つの制約があります。
 
@@ -837,6 +851,17 @@ Kotlin と JDK のバージョンは 1 か所の設定にまとめ、次回の�
 1. 生成して `generated/` をコミット(CI でテンプレートとの一致を検査)
 2. タグを付けて push
 3. バンドラがタグの公開を確認して、タグに固定した URL を付与
+4. CI がタグで全ゲートと E2E を通したあと、`release` ジョブ(`install/release.sh`)が jar を作り、GitHub のリリースに添付する。§1.4 の「リリースごとに公開」と、インストールスクリプトの URL の根拠。リリースのノートに、jar のサイズと SHA-256 が載る
+   - バージョンはタグから取られ、jar のマニフェストの `Implementation-Version` に入る。タグ以外で作った jar は `0.0.0-SNAPSHOT`。一致しなければジョブが失敗し、公開しない
+   - `v` と数字だけではないタグ(`v1.0-rc1` など)では、何も公開しない
+   - 手元での確認は `./install/release.sh vX.Y.Z --dry-run`(タグのチェックアウトで実行)
+5. 下の表に、jar のサイズと、`./e2e/run-e2e.sh` の jar 方式のコンパイル時間を記録する。コンパイル時間は Docker のエミュレーションの参考値で、ジャッジの値ではない(jar をジャッジに置けないため、導入前は実測できない)
+
+**タグの push は、それだけで GitHub のリリースの公開まで進みます**(2026-11-08 に所有者が決定)。push の許可が、公開の許可を兼ねます。
+
+| タグ | jar サイズ | jar 方式のコンパイル時間(Docker、参考) | 備考 |
+|---|---|---|---|
+| `v0.2.0` | 記録なし | 記録なし | 手順 4、5 を定める前のタグ。GitHub のリリースもない |
 
 **生成器の設計**
 
@@ -881,8 +906,10 @@ class KTypeList { /* KType を使って実装 */ }
 
 **Phase 2 に残したもの**
 
-- `mapToLong` などの型変換(`LongList` が必要)、`sortBy { longKey }`、`sortBy { doubleKey }`
-- `argsort`、`sortBy` の実装は Int のキーを前提にしており、Long と Double の展開には別実装が必要
+どちらも全型の `List` で対応しました。
+
+- `mapToLong` などの型変換、`sortByLong`、`sortByDouble`
+- `argsort`、`sortBy` の実装が Int のキーを前提にしていた問題(`KeySort.kt` の基数ソートを追加)
 
 ### Phase 2: 線形構造とソート
 
@@ -899,22 +926,24 @@ class KTypeList { /* KType を使って実装 */ }
 | `PriorityQueue` との比較 | 完了。Dijkstra 部分が 2.3 倍速い。`modCount` を入れた後も処理時間に悪化は見られない(`docs/judge-env.md` §7) |
 | タグの作成 | 完了(`v0.2.0`)。ペアヒープをコンテストで使える |
 | 他の型の組み合わせと `Max` のペアヒープ | 完了。§5.1 の 18 クラスを 1 つのテンプレートから生成し、全ゲートを通過(分岐カバレッジ 100%、変異テスト 91%)、E2E 通過。AtCoder への提出は判断が変わらないので行っていない |
-| 全型の `List` | **未実施**(「Phase 2 に残したもの」も参照)。対象は Int、Long、Double、Char(§5.1)。試しに展開した結果(コミットしていない): Char は `K_SUM_TYPE` がなく生成の時点で失敗。Long、Double は `KTypeListSort` で 1 件ずつコンパイルエラー。コンパイラは早い段階で止まるので、エラーがこれだけとは限らない |
+| 全型の `List` | 完了。Int、Long、Double、Char の `List`、`SubList`、変換、ソートと、型変換 12 ファイルを生成し、全ゲートを通過(分岐カバレッジ 100%、変異テスト 93%)、E2E 通過。決めたことは §5.3.3。テンプレートは Int 版として `check` でコンパイルされる(§11)。実際の問題での提出は、判断が変わらないので行っていない |
 | `Deque`、単純ヒープ、インデックス付きヒープ、配列拡張 | **未実施** |
 | ソートの実測と採否(§6)、argsort の代表問題 | **未実施** |
 
 **積んである作業**
 
-どれも未着手です。順序と着手の時期は所有者が決めます。次は全型の `List` の予定です(2026-11-07 に決定)。AtCoder での手作業が必要なものは、着手するときに手順を具体的に示して依頼します。
+どれも未着手です。順序と着手の時期は所有者が決めます。AtCoder での手作業が必要なものは、着手するときに手順を具体的に示して依頼します。
 
 | 作業 | 内容 | 手作業 |
 |---|---|---|
 | `nextCapacity` の拡張率の決定 | 暫定で 1.5 倍のまま | コードテスト(`e2e/experiments/GrowthRate.kt`) |
-| 全型の `List` | 試しに展開した結果は上の表のとおり。「Phase 2 に残したもの」も含む。あわせて、`KTypeList` と `KTypeSubList` のテンプレートが Int 版のままではコンパイルできない問題(`nextKType`)を直し、§11 の記述と揃える。**`Char` には `sum` を作らず、`K_NUMERIC` で分ける**(`sumOf` は残す)。テストの数値前提が `Char` で通るかは、展開して確かめる | なし |
 | `Deque`、単純ヒープ、インデックス付きヒープ、配列拡張 | §5.4、§5.5、§5.8 | なし |
-| ソートの採否と argsort の代表問題 | §6。Phase 2 の完了条件 | 提出 |
+| `v0.3.0` のタグ | 全型の `List` をコンテストで使えるようにする。マージの後に、Phase 1 のリリース手順で行う。jar の公開は CI の `release` ジョブが行う(初めての実行になるので、成功を確かめる) | なし |
+| ソートの採否と argsort の代表問題 | §6。Phase 2 の完了条件。`Long`、`Double` の `argsort` と `sortByLong` などの既定である基数ソートも測る。基数ソートは測らずに `v0.3.0` に入れる(2026-11-08 に所有者が決定。`v0.2.0` には `Long`、`Double` の `argsort` がなく、悪くなるものがないため) | 提出 |
+| 標準と同じ書き方の不足 | `sumOf` は `Long` のセレクタだけなので、`doubles.sumOf { it * 2.0 }` はコンパイルエラーになる(`sumOfDouble` なら `sortByDouble` と揃う)。`String` から `CharList` を直接作れず、`s.toCharArray().toCharList()` と 2 回コピーする。どちらもコンパイルエラーか小さな無駄で、誤答や黙ったボクシングにはならないので、必要になったら足す | なし |
 | メモリの目標の確認 | §15。JVM の基礎分を差し引いて、`java.util` 比 1/3 以下を満たすかを確かめる | コードテスト |
-| 変異テストの基準の見直し | 90.69% と基準に近い。同じ等価変異がクラスの数だけ数えられるので、§7.1 の「代表型で 90% 以上」に対象を絞るか、確認済みの生存変異との差分を見る形にするかを決める | なし |
+| 変異テストの基準の見直し | 全型の `List` の後で 93.50%。ヒープなどの等価変異が多いテンプレートが増えると基準に近づく。同じ等価変異がクラスの数だけ数えられるので、§7.1 の「代表型で 90% 以上」に対象を絞るか、確認済みの生存変異との差分を見る形にするかを決める | なし |
+| キーソートのファイル分割 | Int キーの `sortBy`、`sortWith`、`subList` だけの提出にも `KeySort.kt`(約 2 KB)が入る。`sortByLong` などを別ファイルに分けると減らせる。節約が小さいので急がない | なし |
 | コンパイル時間とソース長の上限の調査 | 後回し(2026-11-07 に決定、理由は §15)。Phase 4 でツリーを入れるときか、実際の提出が大きくなったときに行う | コードテスト(`e2e/experiments/size-probe.py`) |
 
 ### Phase 3: ハッシュ
@@ -1067,7 +1096,7 @@ AVL / WBT と B+ 木の比較実験(Int キーのみで実装)、方式の決定
 **コンパイル時間とソース長の上限を後回しにした理由(2026-11-07)**
 
 - バンドラは使うクラスだけを結合するので、全型の `List` を追加しても、使わない提出は大きくならない。
-- 今の E2E で最大の貼り付けコードは約 46 KB。ペアヒープの貼り付け提出は ABC 340 D で AC している(約 10 KB)。
+- 実際の問題に近い E2E の貼り付けコードは約 10〜47 KB。ペアヒープの貼り付け提出は ABC 340 D で AC している(約 10 KB)。4 型と変換を 1 つの提出で使う最悪に近いサンプル(`e2e/usage/lists-other-types`)は約 163 KB。
 - 問題になるとすれば、1 つの提出で大きなクラスをいくつも使う場合で、将来の `TreeMap` などが該当しそう。上限がわからなくても、今の作業は変わらない。
 - ルールによると CE にはペナルティがつかない。ただし、上限を超えたときに CE 扱いになるかは不明。
 

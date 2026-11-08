@@ -11,7 +11,7 @@ AtCoder 用の、ボクシングしない Kotlin プリミティブコレクシ�
 ## コードの場所
 
 - `templates/`、`test-templates/`: 編集するのはここです。`generated/` を直接編集してはいけません。
-- `generated/`: 生成物をコミットします。ビルドはここから行います。生成する型は `build-logic/src/main/kotlin/codegen/Codegen.kt` の `GENERATED_TYPES` と `GENERATED_PAIRS` で決まります。今は、単一型のテンプレートが Int だけ、ペアのテンプレートが §5.1 の全組み合わせ(K: Int, Long, Double × V: Int, Long, Obj)です。`MinHeap` を名前に含むテンプレートからは `MaxHeap` も生成されます。テンプレート自体のコンパイル検査はないので、他の型は展開して初めてコンパイルされます。
+- `generated/`: 生成物をコミットします。ビルドはここから行います。生成する型は `build-logic/src/main/kotlin/codegen/Codegen.kt` の `GENERATED_TYPES` と `GENERATED_PAIRS` で決まります。今は、単一型のテンプレートが Int、Long、Double、Char、ペアのテンプレートが §5.1 の全組み合わせ(K: Int, Long, Double × V: Int, Long, Obj)です。`MinHeap` を名前に含むテンプレートからは `MaxHeap` も生成されます。名前に `VType` を含み `KTypeVType` で始まらないテンプレート(`KTypeListMapToVType`)は、異なる型の組ごとに生成されます。`templates/` は Int 版として `check` でコンパイルされます(`#if` と `#else` の両方が有効になるので、同じ宣言を両方に書けません)。`test-templates/` は展開して初めてコンパイルされます。
 - `e2e/usage/*/`: `Main.kt`、`expected.txt`、任意の `input.txt` を置くと E2E の対象になります。
 - `e2e/experiments/`: AtCoder に貼って測る比較用のコードです。
 
@@ -45,6 +45,6 @@ reuse lint                                   # 未導入なら venv に pip inst
 - 依頼するときは、理由と、実行するコマンド、開くページ、提出するものを具体的に書きます。
 - AtCoder での手作業は、判断が変わるときだけ、最小の回数で依頼します。先に Docker のジャッジ再現環境(`e2e/judge`)で確認します。
 - ジャッジの判断は AtCoder の実測で行います。手元や Docker(エミュレーション)の値をジャッジの値として報告してはいけません。
-- コミット、push、タグは許可を得てから行います。タグは参照 URL の根拠なので、付け替えも削除もしません。
+- コミット、push、タグは許可を得てから行います。タグは参照 URL の根拠なので、付け替えも削除もしません。タグを push すると、CI がゲートを通したあとに GitHub のリリースを作り、jar を公開します(`docs/PLAN.md` のリリース手順)。
 - PR は `gh` で作成できます。コミットや push と同じく、許可を得てから行います。作業はブランチで行い、`main` に直接 push しません。
 - 文書は日本語で書き、結果と決定を `docs/` に残します。

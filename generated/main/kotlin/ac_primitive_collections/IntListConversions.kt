@@ -32,14 +32,14 @@ fun IntList.addAll(values: Iterable<Int>) {
 
 fun IntArray.toIntList(): IntList = IntList(copyOf(), size)
 
-/** Does not box, unlike the `Iterable` overload that this one takes precedence over. */
-fun IntRange.toIntList(): IntList {
+/** Takes a range, `step`, or `downTo`. Does not box, unlike the `Iterable` overload that this one takes precedence over. */
+fun IntProgression.toIntList(): IntList {
     val result = IntList()
-    if (isEmpty()) return result
-    var value = first
-    while (true) {
-        result.add(value)
-        if (value == last) return result
-        value++
-    }
+    result.addAll(this)
+    return result
+}
+
+/** Takes a range, `step`, or `downTo`. Does not box, unlike the `Iterable` overload that this one takes precedence over. */
+fun IntList.addAll(values: IntProgression) {
+    for (value in values) add(value)
 }

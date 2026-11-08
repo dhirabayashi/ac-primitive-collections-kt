@@ -24,12 +24,12 @@ class IntListDifferentialTest {
         REMOVE_AT(1), REMOVE_FIRST(1), REMOVE_LAST(1), REMOVE_VALUE(1), REMOVE_RANGE(1), SWAP_REMOVE(1), REMOVE_IF(1),
         TRUNCATE(1), CLEAR(1), MINUS_ASSIGN(1),
         SET(2), SORT(2), SORT_RANGE(2), SORT_DESCENDING(2), REVERSE(2), SWAP(2), ROTATE(2), FILL(2), DEDUPE(2),
-        SORT_WITH(2), SORT_BY(2), NEXT_PERMUTATION(2), COPY_THEN_REPLACE(2), MAP_THEN_REPLACE(2), TRIM(2),
+        SORT_WITH(2), SORT_BY(2), SORT_BY_LONG(2), SORT_BY_DOUBLE(2), NEXT_PERMUTATION(2), COPY_THEN_REPLACE(2), MAP_THEN_REPLACE(2), TRIM(2),
     }
 
     private fun value(random: Random, domain: ValueDomain, step: Int): Int = when (domain) {
         ValueDomain.SMALL -> random.nextInt(5).toInt()
-        ValueDomain.FULL -> random.nextInt().toInt()
+        ValueDomain.FULL -> random.nextInt()
         ValueDomain.BOUNDARY -> BOUNDARY_VALUES[random.nextInt(BOUNDARY_VALUES.size)]
         ValueDomain.MONOTONIC -> step.toInt()
     }
@@ -173,8 +173,17 @@ class IntListDifferentialTest {
                 model.sortWith { x, y -> y.compareTo(x) }
             }
             Kind.SORT_BY -> {
-                list.sortBy { it.toInt() % 3 }
-                model.sortBy { it.toInt() % 3 }
+                list.sortBy { it % 3 }
+                model.sortBy { it % 3 }
+            }
+            Kind.SORT_BY_LONG -> {
+                list.sortByLong { it % 3 * Long.MAX_VALUE }
+                model.sortBy { it % 3 * Long.MAX_VALUE }
+            }
+            Kind.SORT_BY_DOUBLE -> {
+                // Dividing by zero reaches both infinities and NaN.
+                list.sortByDouble { it % 3 / 0.0 }
+                model.sortBy { it % 3 / 0.0 }
             }
             Kind.NEXT_PERMUTATION -> if (n <= 6) {
                 val expected = nextPermutationOf(model)
@@ -253,8 +262,9 @@ class IntListDifferentialTest {
         assertEquals(model.count { (it < op.value) }, list.count { (it < op.value) })
         assertEquals(model.distinct(), list.distinct().toList())
         assertEquals(model.sumOf { it.toLong() }, list.sum())
-        assertEquals(model.minOrNull() ?: op.value, list.minOrDefault(op.value))
-        assertEquals(model.maxOrNull() ?: op.value, list.maxOrDefault(op.value))
+        // The standard `minOrNull` on doubles lets NaN win, so compare by the order the list promises.
+        assertEquals(model.minWithOrNull(naturalOrder()) ?: op.value, list.minOrDefault(op.value))
+        assertEquals(model.maxWithOrNull(naturalOrder()) ?: op.value, list.maxOrDefault(op.value))
         val sorted = model.sorted()
         val sortedList = list.sorted()
         assertEquals(sorted, sortedList.toList())
@@ -264,6 +274,8 @@ class IntListDifferentialTest {
         if (op.value in sorted) assertEquals(op.value, sortedList[found]) else assertEquals(-sortedList.lowerBound(op.value) - 1, found)
         val indices = list.argsort()
         assertEquals(model.indices.sortedBy { model[it] }, indices.toList())
+        assertEquals(model.indices.sortedBy { model[it] * (1L shl 33) }, list.argsortByLong { it * (1L shl 33) }.toList())
+        assertEquals(model.indices.sortedBy { model[it] % 3 / 0.0 }, list.argsortByDouble { it % 3 / 0.0 }.toList())
     }
 
     private fun check(ops: List<Op>, fullCheckEvery: Int) {

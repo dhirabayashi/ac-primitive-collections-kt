@@ -6,12 +6,19 @@ package ac_primitive_collections
 
 typealias KType = Int
 typealias KTypeArray = IntArray
-typealias KTypeIterator = IntIterator
-typealias KTypeRange = IntRange
+typealias KTypeProgression = IntProgression
 typealias K_SUM_TYPE = Long
 typealias VType = Int
 typealias VTypeArray = IntArray
 typealias VStored = Int
+typealias VTypeList = KTypeList
+
+/** Stands for `kotlin.collections.IntIterator`, whose abstract method is `nextInt`, so that `nextKType` compiles here. */
+abstract class KTypeIterator : Iterator<KType> {
+    abstract fun nextKType(): KType
+
+    final override fun next(): KType = nextKType()
+}
 
 const val K_ZERO: KType = 0
 const val K_SUM_ZERO: K_SUM_TYPE = 0L
@@ -24,3 +31,4 @@ inline fun V_NEW_ARRAY(size: Int): VTypeArray = VTypeArray(size)
 inline fun V_CAST(x: VStored): VType = x
 inline fun K_HASH(x: KType): Int = x.hashCode()
 inline fun K_TO_SUM(x: KType): K_SUM_TYPE = x.toLong()
+fun K_ARGSORT(list: KTypeList): IntArray = list.argsortBy { it }

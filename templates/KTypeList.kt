@@ -450,7 +450,15 @@ class KTypeList @PublishedApi internal constructor(
         private val expected = list.modCount
         private var next = 0
 
-        override fun hasNext(): Boolean = next < list.length
+        /**
+         * After a clear, the size alone would end the loop as if it had finished, so the end checks too. Only the
+         * end: [nextKType] already checks each element, and a loop can only stop silently here.
+         */
+        override fun hasNext(): Boolean {
+            if (next < list.length) return true
+            if (list.modCount != expected) throwConcurrentModification()
+            return false
+        }
 
         override fun nextKType(): KType {
             if (list.modCount != expected) throwConcurrentModification()
@@ -459,7 +467,7 @@ class KTypeList @PublishedApi internal constructor(
         }
     }
 
-    /** Returns a same-typed list. Conversions to other element types arrive with those types. */
+    /** Returns a same-typed list. Conversions to other element types are `mapToLong` and so on. */
     inline fun map(transform: (KType) -> KType): KTypeList {
         val result = KTypeList(length)
         forEach { result.add(transform(it)) }
@@ -516,6 +524,7 @@ class KTypeList @PublishedApi internal constructor(
         return result
     }
 
+    //#if K_NUMERIC
     fun sum(): K_SUM_TYPE = sum(0, length)
 
     /** Does not overflow for Int, because the result is a Long. A Long sum wraps around. */
@@ -530,6 +539,7 @@ class KTypeList @PublishedApi internal constructor(
         }
         return result
     }
+    //#endif
 
     fun min(): KType = min(0, length)
 

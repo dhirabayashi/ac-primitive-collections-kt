@@ -5,8 +5,8 @@ import java.io.File
 
 /** Maps templates to generated files. The output is deterministic so CI can compare it. */
 object Codegen {
-    /** Element types of single-type templates. Only Int so far. See docs/PLAN.md, section 11. */
-    val GENERATED_TYPES = listOf("Int")
+    /** Element types of single-type templates, from docs/PLAN.md section 5.1. */
+    val GENERATED_TYPES = listOf("Int", "Long", "Double", "Char")
 
     /**
      * Key and value types of pair templates, from docs/PLAN.md section 5.1.
@@ -16,6 +16,9 @@ object Codegen {
 
     private const val TEMPLATE_PREFIX = "KType"
     private const val PAIR_TEMPLATE_PREFIX = "KTypeVType"
+
+    /** A name with this holds a conversion, expanded once for each pair of different element types. */
+    private const val CONVERSION_TARGET = "VType"
     private const val MIN_HEAP = "MinHeap"
     private const val MAX_HEAP = "MaxHeap"
     // REUSE-IgnoreStart
@@ -48,6 +51,14 @@ object Codegen {
                         val name = fileName.replace(PAIR_TEMPLATE_PREFIX, key + value)
                         result["ac_primitive_collections/$name"] = header(label) +
                             TemplateEngine.expand(body, TYPE_SPECS.getValue(key), values.getValue(value), maxHeap)
+                    }
+                    continue
+                }
+                if (CONVERSION_TARGET in template.name) {
+                    for (source in GENERATED_TYPES) for (target in GENERATED_TYPES - source) {
+                        val name = fileName.replace(CONVERSION_TARGET, target).replace(TEMPLATE_PREFIX, source)
+                        result["ac_primitive_collections/$name"] = header(label) +
+                            TemplateEngine.expand(body, TYPE_SPECS.getValue(source), conversionTarget(target))
                     }
                     continue
                 }
