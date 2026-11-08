@@ -4,6 +4,7 @@ import org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension
 plugins {
     kotlin("jvm")
     id("ac.codegen")
+    id("ac.mutation-gate")
     id("me.champeau.jmh")
     id("org.jetbrains.kotlinx.kover")
     id("info.solidsoft.pitest")
@@ -115,6 +116,7 @@ dependencies {
 }
 
 // ---- Mutation testing. Nightly only. See docs/PLAN.md, section 7.1. ----
+// No score threshold: pitestBaseline (ac.mutation-gate) fails on any survivor that docs/mutation-review.md does not list.
 
 pitest {
     pitestVersion = "1.20.0"
@@ -136,7 +138,6 @@ pitest {
     threads = Runtime.getRuntime().availableProcessors()
     outputFormats = setOf("HTML", "XML")
     timestampedReports = false
-    mutationThreshold = 90
     jvmArgs = listOf("-Dops=2000")
 }
 

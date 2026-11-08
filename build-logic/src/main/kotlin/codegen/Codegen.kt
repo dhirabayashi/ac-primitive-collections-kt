@@ -19,14 +19,17 @@ object Codegen {
 
     /** A name with this holds a conversion, expanded once for each pair of different element types. */
     private const val CONVERSION_TARGET = "VType"
-    private const val MIN_HEAP = "MinHeap"
-    private const val MAX_HEAP = "MaxHeap"
+    const val MIN_HEAP = "MinHeap"
+    const val MAX_HEAP = "MaxHeap"
     // REUSE-IgnoreStart
     private const val SPDX = "// SPDX-License-Identifier: CC0-1.0\n"
     // REUSE-IgnoreEnd
 
+    /** Starts the second line of every generated file. The mutation gate reads the template's name from it. */
+    const val GENERATED_FROM = "// Generated from "
+
     fun header(templateName: String) = SPDX +
-        "// Generated from $templateName. Do not edit; run ./gradlew generateSources.\n" +
+        "$GENERATED_FROM$templateName. Do not edit; run ./gradlew generateSources.\n" +
         "// Created with generative AI. AtCoder's rules require the reference URL when you copy this\n" +
         "// into a contest submission: https://github.com/dhirabayashi/ac-primitive-collections-kt\n"
 

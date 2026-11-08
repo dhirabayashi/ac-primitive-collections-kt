@@ -28,6 +28,10 @@ gradlePlugin {
             id = "ac.codegen"
             implementationClass = "codegen.CodegenPlugin"
         }
+        create("mutationGate") {
+            id = "ac.mutation-gate"
+            implementationClass = "mutation.MutationGatePlugin"
+        }
     }
 }
 
@@ -36,4 +40,7 @@ tasks.test {
     // CodegenTest reads the real templates, so a template change must rerun it.
     inputs.dir("../templates")
     inputs.dir("../test-templates")
+    // MutationGateTest reads the real review table and the committed generated files.
+    inputs.file("../docs/mutation-review.md")
+    inputs.dir("../generated/main/kotlin")
 }
