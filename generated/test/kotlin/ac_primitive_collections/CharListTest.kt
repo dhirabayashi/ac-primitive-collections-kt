@@ -68,6 +68,30 @@ class CharListTest {
     }
 
     @Test
+    fun fromProgression() {
+        assertList((v(1)..v(5) step 2).toCharList(), 1, 3, 5)
+        assertList((v(1)..v(6) step 2).toCharList(), 1, 3, 5)
+        assertList((v(3) downTo v(1)).toCharList(), 3, 2, 1)
+        assertList((v(1) downTo v(3)).toCharList())
+        assertList((v(2)..v(2) step 2).toCharList(), 2)
+        assertList((v(2) downTo v(2)).toCharList(), 2)
+        val nearMin = (Char.MIN_VALUE + 1) downTo Char.MIN_VALUE
+        assertEquals(listOf(Char.MIN_VALUE + 1, Char.MIN_VALUE), nearMin.toCharList().toList())
+        val pastMax = (Char.MAX_VALUE - 2)..Char.MAX_VALUE step 2
+        assertEquals(listOf(Char.MAX_VALUE - 2, Char.MAX_VALUE), pastMax.toCharList().toList())
+    }
+
+    @Test
+    fun addAllProgressions() {
+        val list = CharList()
+        list.addAll(v(1)..v(2))
+        list.addAll(v(5) downTo v(4))
+        list.addAll(v(6)..v(8) step 2)
+        list.addAll(v(2)..v(1))
+        assertList(list, 1, 2, 5, 4, 6, 8)
+    }
+
+    @Test
     fun elementAccess() {
         val list = listOfInts(1, 2, 3)
         assertEquals(v(2), list[1])

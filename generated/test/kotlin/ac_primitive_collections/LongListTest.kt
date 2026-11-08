@@ -68,6 +68,30 @@ class LongListTest {
     }
 
     @Test
+    fun fromProgression() {
+        assertList((v(1)..v(5) step 2).toLongList(), 1, 3, 5)
+        assertList((v(1)..v(6) step 2).toLongList(), 1, 3, 5)
+        assertList((v(3) downTo v(1)).toLongList(), 3, 2, 1)
+        assertList((v(1) downTo v(3)).toLongList())
+        assertList((v(2)..v(2) step 2).toLongList(), 2)
+        assertList((v(2) downTo v(2)).toLongList(), 2)
+        val nearMin = (Long.MIN_VALUE + 1) downTo Long.MIN_VALUE
+        assertEquals(listOf(Long.MIN_VALUE + 1, Long.MIN_VALUE), nearMin.toLongList().toList())
+        val pastMax = (Long.MAX_VALUE - 2)..Long.MAX_VALUE step 2
+        assertEquals(listOf(Long.MAX_VALUE - 2, Long.MAX_VALUE), pastMax.toLongList().toList())
+    }
+
+    @Test
+    fun addAllProgressions() {
+        val list = LongList()
+        list.addAll(v(1)..v(2))
+        list.addAll(v(5) downTo v(4))
+        list.addAll(v(6)..v(8) step 2)
+        list.addAll(v(2)..v(1))
+        assertList(list, 1, 2, 5, 4, 6, 8)
+    }
+
+    @Test
     fun elementAccess() {
         val list = listOfInts(1, 2, 3)
         assertEquals(v(2), list[1])

@@ -68,6 +68,30 @@ class IntListTest {
     }
 
     @Test
+    fun fromProgression() {
+        assertList((v(1)..v(5) step 2).toIntList(), 1, 3, 5)
+        assertList((v(1)..v(6) step 2).toIntList(), 1, 3, 5)
+        assertList((v(3) downTo v(1)).toIntList(), 3, 2, 1)
+        assertList((v(1) downTo v(3)).toIntList())
+        assertList((v(2)..v(2) step 2).toIntList(), 2)
+        assertList((v(2) downTo v(2)).toIntList(), 2)
+        val nearMin = (Int.MIN_VALUE + 1) downTo Int.MIN_VALUE
+        assertEquals(listOf(Int.MIN_VALUE + 1, Int.MIN_VALUE), nearMin.toIntList().toList())
+        val pastMax = (Int.MAX_VALUE - 2)..Int.MAX_VALUE step 2
+        assertEquals(listOf(Int.MAX_VALUE - 2, Int.MAX_VALUE), pastMax.toIntList().toList())
+    }
+
+    @Test
+    fun addAllProgressions() {
+        val list = IntList()
+        list.addAll(v(1)..v(2))
+        list.addAll(v(5) downTo v(4))
+        list.addAll(v(6)..v(8) step 2)
+        list.addAll(v(2)..v(1))
+        assertList(list, 1, 2, 5, 4, 6, 8)
+    }
+
+    @Test
     fun elementAccess() {
         val list = listOfInts(1, 2, 3)
         assertEquals(v(2), list[1])

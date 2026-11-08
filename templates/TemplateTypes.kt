@@ -6,7 +6,7 @@ package ac_primitive_collections
 
 typealias KType = Int
 typealias KTypeArray = IntArray
-typealias KTypeRange = IntRange
+typealias KTypeProgression = IntProgression
 typealias K_SUM_TYPE = Long
 typealias VType = Int
 typealias VTypeArray = IntArray

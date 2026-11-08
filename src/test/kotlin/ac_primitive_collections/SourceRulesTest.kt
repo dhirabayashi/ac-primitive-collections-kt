@@ -54,4 +54,26 @@ class SourceRulesTest {
         }
         assertEquals(emptyList(), clashes)
     }
+
+    private val iterableOfProgressionType = Regex("""Iterable<(Int|Long|Char)>""")
+
+    /**
+     * An `Iterable` overload boxes, and Kotlin picks it without a warning for `1..n step 2` and `n downTo 1`
+     * unless an overload for the progression type exists (docs/PLAN.md, section 4.6). The boxing happens inside
+     * the library, so the check on user code cannot see it.
+     */
+    @Test
+    fun iterableOverloadsHaveProgressionOverloads() {
+        var checked = 0
+        val missing = sources(libraryRoots).flatMap { file ->
+            val lines = file.readLines().map { it.trim() }.toSet()
+            lines.filter { it.startsWith("fun ") && iterableOfProgressionType.containsMatchIn(it) }.mapNotNull { line ->
+                checked++
+                val wanted = iterableOfProgressionType.replace(line) { "${it.groupValues[1]}Progression" }
+                if (wanted in lines) null else "${file.path}: $wanted"
+            }
+        }
+        assertEquals(emptyList(), missing)
+        assertTrue(checked > 0, "The pattern should find something")
+    }
 }

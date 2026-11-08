@@ -68,6 +68,30 @@ class KTypeListTest {
         val nearMax = (KType.MAX_VALUE - 1)..KType.MAX_VALUE
         assertEquals(listOf(KType.MAX_VALUE - 1, KType.MAX_VALUE), nearMax.toKTypeList().toList())
     }
+
+    @Test
+    fun fromProgression() {
+        assertList((v(1)..v(5) step 2).toKTypeList(), 1, 3, 5)
+        assertList((v(1)..v(6) step 2).toKTypeList(), 1, 3, 5)
+        assertList((v(3) downTo v(1)).toKTypeList(), 3, 2, 1)
+        assertList((v(1) downTo v(3)).toKTypeList())
+        assertList((v(2)..v(2) step 2).toKTypeList(), 2)
+        assertList((v(2) downTo v(2)).toKTypeList(), 2)
+        val nearMin = (KType.MIN_VALUE + 1) downTo KType.MIN_VALUE
+        assertEquals(listOf(KType.MIN_VALUE + 1, KType.MIN_VALUE), nearMin.toKTypeList().toList())
+        val pastMax = (KType.MAX_VALUE - 2)..KType.MAX_VALUE step 2
+        assertEquals(listOf(KType.MAX_VALUE - 2, KType.MAX_VALUE), pastMax.toKTypeList().toList())
+    }
+
+    @Test
+    fun addAllProgressions() {
+        val list = KTypeList()
+        list.addAll(v(1)..v(2))
+        list.addAll(v(5) downTo v(4))
+        list.addAll(v(6)..v(8) step 2)
+        list.addAll(v(2)..v(1))
+        assertList(list, 1, 2, 5, 4, 6, 8)
+    }
     //#endif
 
     @Test

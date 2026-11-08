@@ -32,14 +32,14 @@ fun CharList.addAll(values: Iterable<Char>) {
 
 fun CharArray.toCharList(): CharList = CharList(copyOf(), size)
 
-/** Does not box, unlike the `Iterable` overload that this one takes precedence over. */
-fun CharRange.toCharList(): CharList {
+/** Takes a range, `step`, or `downTo`. Does not box, unlike the `Iterable` overload that this one takes precedence over. */
+fun CharProgression.toCharList(): CharList {
     val result = CharList()
-    if (isEmpty()) return result
-    var value = first
-    while (true) {
-        result.add(value)
-        if (value == last) return result
-        value++
-    }
+    result.addAll(this)
+    return result
+}
+
+/** Takes a range, `step`, or `downTo`. Does not box, unlike the `Iterable` overload that this one takes precedence over. */
+fun CharList.addAll(values: CharProgression) {
+    for (value in values) add(value)
 }

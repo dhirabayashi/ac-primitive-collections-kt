@@ -32,14 +32,14 @@ fun LongList.addAll(values: Iterable<Long>) {
 
 fun LongArray.toLongList(): LongList = LongList(copyOf(), size)
 
-/** Does not box, unlike the `Iterable` overload that this one takes precedence over. */
-fun LongRange.toLongList(): LongList {
+/** Takes a range, `step`, or `downTo`. Does not box, unlike the `Iterable` overload that this one takes precedence over. */
+fun LongProgression.toLongList(): LongList {
     val result = LongList()
-    if (isEmpty()) return result
-    var value = first
-    while (true) {
-        result.add(value)
-        if (value == last) return result
-        value++
-    }
+    result.addAll(this)
+    return result
+}
+
+/** Takes a range, `step`, or `downTo`. Does not box, unlike the `Iterable` overload that this one takes precedence over. */
+fun LongList.addAll(values: LongProgression) {
+    for (value in values) add(value)
 }

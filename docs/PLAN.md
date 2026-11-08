@@ -242,7 +242,9 @@ val c = map.findSlot(k); if (c >= 0) map.valueAt(c)
 |---|---|
 | 標準コレクションへ | `IntList` / `IntDeque` → `toList()`、`toMutableList()`。`IntHashSet` / `IntTreeSet` → `toSet()`、`toMutableSet()`。`IntIntHashMap` / `IntIntTreeMap` → `toMap()`、`toMutableMap()`。ヒープ → `toUnorderedList()`、`toSortedList()` |
 | 標準コレクションから | `Iterable<Int>.toIntList()`、`Iterable<Int>.toIntHashSet()`、`Iterable<Int>.toIntTreeSet()`、`Map<Int, Int>.toIntIntHashMap()`、`Map<Int, Int>.toIntIntTreeMap()` など。`addAll(Iterable<Int>)` |
-| 配列・範囲から(ボクシングなし) | `IntArray.toIntList()`、`IntRange.toIntList()` など。ACL は配列を受け取るので、`toIntArray()` と合わせて最も重要な経路 |
+| 配列・範囲から(ボクシングなし) | `IntArray.toIntList()`、`IntProgression.toIntList()`、`addAll(IntProgression)` など。`IntProgression` は `1..n`、`1..n step 2`、`n downTo 1` のすべてを受ける。受け手が `IntRange` だと `step` と `downTo` は `Iterable` 版に解決され、警告なしでボクシングする。ACL は配列を受け取るので、`toIntArray()` と合わせて最も重要な経路 |
+
+**`Iterable` を受ける API には、範囲を受ける版を必ず並べます。** 対象は `Int`、`Long`、`Char` です(`toIntHashSet` など、これから作るものも含みます)。ボクシングはライブラリの中で起きるので、利用コードの検査では見えません。`SourceRulesTest` の `iterableOverloadsHaveProgressionOverloads` が、同じファイルに範囲版がないことを検出します。
 
 順序の仕様:
 
@@ -395,7 +397,7 @@ K はキー、V は値です。ソース上で約 100 クラスを見込みま�
 
 #### 5.3.2 `fold` と `sumOf`(Phase 1 の実装で確定)
 
-- **`fold` は標準と同じ `fold<R>` にします。** `Int`、`Long`、`Double` の別々のオーバーロードにすると、`fold(0) { ... }` が曖昧でコンパイルエラーになります。ジェネリックでも、inline 展開後はコンパイラの最適化でボクシングが消えます。ただし**直接のループで書いたときだけ**で、`forEach` の上に書くとボクシングが残ります(Kotlin 2.2.10 で確認。`MainKt` の厳格検査で回帰を検出)。
+- **`fold` は標準と同じ `fold<R>` にします。** `Int`、`Long`、`Double` の別々のオーバーロードにすると、`fold(0) { ... }` が曖昧でコンパイルエラーになります。ジェネリックでも、inline 展開後はコンパイラの最適化でボクシングが消えます。ただし**直接のループで書いたときだけ**で、`forEach` の上に書くとボクシングが残ります(Kotlin 2.2.10 で確認。`MainKt` の厳格検査で回帰を検出)。**ジェネリックな inline 関数は、全キー型と、結果型 `Int`、`Long`、`Double`、`Char`、`Boolean` の組み合わせを `e2e/usage` から呼びます。** 結果がコンパイラの最適化次第で決まるのは、型引数を持つものだけです。ラムダの型がプリミティブで決まる `forEach` などは、展開してもボクシングしません。今の該当は `fold` だけで、`intlist-all` と `lists-other-types` で全組み合わせを呼んでいます。
 - **`sumOf` は `Long` を返すセレクタのみです。** `Int` と `Long` の両方を受けるには実験的機能(`@OverloadResolutionByLambdaReturnType`)が必要で、§1.4 に反します。`Int` のセレクタは `sumOf { it.toLong() }` と書きます。
 
 #### 5.3.3 全型への展開で決めたこと
@@ -736,7 +738,7 @@ Kotlin 2.2.10 の実験で、次の差を確認しました。いずれもコン
 | 利用者が `IntArray.lowerBound` を定義する | 成功(利用者側が優先) | エラー | バンドラが衝突を検出して、分かりやすく報告 |
 | 利用者が `class IntPair` を定義する | 成功 | エラー | 同上 |
 | 利用者がライブラリの内部名(`checkRange`、`DEFAULT_CAPACITY` など)をトップレベルに定義する | 成功 | 同じシグネチャならエラー | バンドラは名前だけで判定するので、引数が違って貼り付けても動く場合も、改名を求めるエラーにする。誤答にはならず、数秒で直せる。貼り付けは暫定手段で、内部名にすべて接頭辞を付ける読みにくさは導入後も残るので、根本対策は行わない(2026-11-08 に決定) |
-| ライブラリの `internal` を呼ぶ | エラー | 成功 | バンドラがトップレベルの名前を検出して**警告**する。ローカル変数と区別できず、貼り付けならコンパイルできるので、本番で提出を止めないようエラーにはしない。**メンバー(`list.elements` など)は検出できない**(コンパイルすると提出が遅くなるため)。ジャッジ導入後に初めて気づく可能性があるが、使わないことで避ける |
+| ライブラリの `internal` を呼ぶ | エラー | 成功 | バンドラがトップレベルの名前を検出して**警告**する。ローカル変数と区別できず、貼り付けならコンパイルできるので、本番で提出を止めないようエラーにはしない。**メンバー(`list.elements` など)は検出できない**(コンパイルすると提出が遅くなるため)。ジャッジ導入後に初めて気づく可能性があるが、使わないことで避ける(2026-11-08 に所有者が確認) |
 
 結合処理にも、次の 2 つの制約があります。
 
@@ -923,9 +925,11 @@ class KTypeList { /* KType を使って実装 */ }
 |---|---|---|
 | `nextCapacity` の拡張率の決定 | 暫定で 1.5 倍のまま | コードテスト(`e2e/experiments/GrowthRate.kt`) |
 | `Deque`、単純ヒープ、インデックス付きヒープ、配列拡張 | §5.4、§5.5、§5.8 | なし |
-| ソートの採否と argsort の代表問題 | §6。Phase 2 の完了条件 | 提出 |
+| `v0.3.0` のタグ | 全型の `List` をコンテストで使えるようにする。マージの後に付け、§1.4 の jar サイズとコンパイル時間を記録する | なし |
+| ソートの採否と argsort の代表問題 | §6。Phase 2 の完了条件。`sortByLong` などの基数ソートも測る。for-in の `hasNext` に増えた `modCount` の検査も未計測なので、次に比較するときに一緒に見る | 提出 |
+| 標準と同じ書き方の不足 | `sumOf` は `Long` のセレクタだけなので、`doubles.sumOf { it * 2.0 }` はコンパイルエラーになる(`sumOfDouble` なら `sortByDouble` と揃う)。`String` から `CharList` を直接作れず、`s.toCharArray().toCharList()` と 2 回コピーする。どちらもコンパイルエラーか小さな無駄で、誤答や黙ったボクシングにはならないので、必要になったら足す | なし |
 | メモリの目標の確認 | §15。JVM の基礎分を差し引いて、`java.util` 比 1/3 以下を満たすかを確かめる | コードテスト |
-| 変異テストの基準の見直し | 全型の `List` の後で 93.36%。ヒープなどの等価変異が多いテンプレートが増えると基準に近づく。同じ等価変異がクラスの数だけ数えられるので、§7.1 の「代表型で 90% 以上」に対象を絞るか、確認済みの生存変異との差分を見る形にするかを決める | なし |
+| 変異テストの基準の見直し | 全型の `List` の後で 93.25%。ヒープなどの等価変異が多いテンプレートが増えると基準に近づく。同じ等価変異がクラスの数だけ数えられるので、§7.1 の「代表型で 90% 以上」に対象を絞るか、確認済みの生存変異との差分を見る形にするかを決める | なし |
 | キーソートのファイル分割 | Int キーの `sortBy`、`sortWith`、`subList` だけの提出にも `KeySort.kt`(約 2 KB)が入る。`sortByLong` などを別ファイルに分けると減らせる。節約が小さいので急がない | なし |
 | コンパイル時間とソース長の上限の調査 | 後回し(2026-11-07 に決定、理由は §15)。Phase 4 でツリーを入れるときか、実際の提出が大きくなったときに行う | コードテスト(`e2e/experiments/size-probe.py`) |
 
