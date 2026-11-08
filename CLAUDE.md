@@ -22,7 +22,7 @@ JDK は Gradle が 23 を選びます(`gradle/gradle-daemon-jvm.properties`)。
 ```sh
 ./gradlew generateSources                    # templates/ を変更したら実行
 ./gradlew check koverVerify :build-logic:test --continue
-./gradlew pitest                             # 閾値 90%。生存変異は docs/mutation-review.md で確認
+./gradlew pitest                             # 続けて pitestBaseline が、生存変異を docs/mutation-review.md の表と照合
 ./e2e/run-e2e.sh                             # Docker が必要。ジャッジ再現環境で貼り付けと jar の両方
 reuse lint                                   # 未導入なら venv に pip install 'reuse[charset-normalizer]'
 ```
