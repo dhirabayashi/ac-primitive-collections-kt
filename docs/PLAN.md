@@ -943,6 +943,7 @@ class KTypeList { /* KType を使って実装 */ }
 | ソートの採否と argsort の代表問題 | §6。Phase 2 の完了条件。`Long`、`Double` の `argsort` と `sortByLong` などの既定である基数ソートも測る。基数ソートは測らずに `v0.3.0` に入れた(2026-11-08 に所有者が決定。`v0.2.0` には `Long`、`Double` の `argsort` がなく、悪くなるものがないため) | 提出 |
 | 標準と同じ書き方の不足 | `sumOf` は `Long` のセレクタだけなので、`doubles.sumOf { it * 2.0 }` はコンパイルエラーになる(`sumOfDouble` なら `sortByDouble` と揃う)。`String` から `CharList` を直接作れず、`s.toCharArray().toCharList()` と 2 回コピーする。どちらもコンパイルエラーか小さな無駄で、誤答や黙ったボクシングにはならないので、必要になったら足す | なし |
 | メモリの目標の確認 | §15。JVM の基礎分を差し引いて、`java.util` 比 1/3 以下を満たすかを確かめる | コードテスト |
+| `pitestBaseline` の CI での初回確認 | 新しい変異テストのゲート(§7.1、`docs/mutation-gate.md`)は、x64 の CI ではまだ動いていない。最初の nightly か `gh workflow run ci.yml --ref main` で通ることを確かめる。失敗したら、表にない変異が、手元と CPU が違うことによる `TIMED_OUT` と `SURVIVED` の揺れかどうかを見る | なし |
 | キーソートのファイル分割 | Int キーの `sortBy`、`sortWith`、`subList` だけの提出にも `KeySort.kt`(約 2 KB)が入る。`sortByLong` などを別ファイルに分けると減らせる。節約が小さいので急がない | なし |
 | コンパイル時間とソース長の上限の調査 | 後回し(2026-11-07 に決定、理由は §15)。Phase 4 でツリーを入れるときか、実際の提出が大きくなったときに行う | コードテスト(`e2e/experiments/size-probe.py`) |
 
