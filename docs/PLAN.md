@@ -431,7 +431,7 @@ K はキー、V は値です。ソース上で約 100 クラスを見込みま�
 - **構造変更の検出は `List` と同じです(§5.3.1)。** 追加と削除が `modCount` を進め、`forEach`、`forEachReversed`、for-in は変更を検出して例外にします。`set` と `rotate` は要素数を変えないので検出しません。何も変わらない `addAll`(0 個)と `-=`(一致なし)は `modCount` を進めません。
 - **`equals` は容量と内部の配置によらず、先頭からの並びで比べます。** `hashCode` は `List.hashCode` と同じ式です。`Double` は全順序です(§4.4)。
 - **持たないもの:** `subList`(§5.3.1)、`removeFirstOrDefault`(空かどうかは `isNotEmpty` で見る。必要になったら足す)、`any` や `count` などの高階関数、`sort`、`toIntList`(Deque のファイルが `IntList` を提出に引き込むため。`d.toIntArray().toIntList()` で書ける)。いずれもコンパイルエラーになるだけで、黙ってボクシングしたり誤答になったりはしません。
-- **バンドル:** `IntDeque` をキューとして使うだけの提出には、`IntDeque.kt`、`IntDequeConversions.kt`、`Support.kt` の 3 ファイル(18,234 バイト)が入ります。`IntList` は入りません(2026-11-08 に `./bundle -p` で確認)。
+- **バンドル:** `IntDeque` をキューとして使うだけの提出には、`IntDeque.kt`、`IntDequeConversions.kt`、`Support.kt` の 3 ファイルが入ります。`IntList` は入りません。出力全体は 18,234 バイトです(コミット `0844bb7` で、`IntDeque()` を作って `addLast`、`isNotEmpty`、`removeFirst` だけを呼ぶ 7 行の `Main.kt` を `./bundle -p` した値。利用コードも含むので、`Main.kt` によって変わる)。
 
 ### 5.5 ヒープ
 
