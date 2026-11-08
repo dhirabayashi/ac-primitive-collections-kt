@@ -414,6 +414,25 @@ K はキー、V は値です。ソース上で約 100 クラスを見込みま�
 
 `addFirst`、`addLast`、`removeFirst`、`removeLast`、`first`、`last`、`*OrDefault`、`*OrElse`、`get(i)`、`set(i, v)`(先頭からの添字)、`addAll*`、`contains`、`indexOf`、`rotate`、`forEach`、`forEachReversed`、`toIntArray`(巻き戻し済み配列を返す)。スタックやキューの用途にも使います。
 
+#### 5.4.1 実装で決めたこと(2026-11-08)
+
+テンプレートは `templates/KTypeDeque.kt` と、標準コレクションとの変換を分けた `templates/KTypeDequeConversions.kt` です。4 型(Int、Long、Double、Char)を生成します。
+
+| 分類 | 操作 |
+|---|---|
+| 要素 | `[]`、`[] =`、`first`、`last`、`firstOrDefault`、`lastOrDefault`、`firstOrElse`、`lastOrElse`、`size`、`lastIndex`、`indices`、`capacity` |
+| 追加 | `addFirst`、`addLast`、`add`(`addLast` と同じ。`ArrayDeque` に合わせる)、`+=`、`addAll(IntArray / IntArray の部分範囲 / IntDeque / IntProgression / Iterable<Int>)` |
+| 削除 | `removeFirst`、`removeLast`、`removeAt`、`removeValue`、`-=`、`clear` |
+| その他 | `contains`(`in`)、`indexOf`、`rotate`、`ensureCapacity`、`forEach`、`forEachReversed`、`for (x in d)`、`+`、`-`、`copy`、`toIntArray`、`toList`、`toMutableList`、`appendTo`、`joinToString`、`equals`、`hashCode`、`toString` |
+| 生成 | `IntDeque(capacity)`、`intDequeOf(...)`、`IntArray.toIntDeque()`、`IntProgression.toIntDeque()`、`Iterable<Int>.toIntDeque()` |
+
+- **容量は 2 の冪で、拡張は 2 倍です。** 添字を `and (capacity - 1)` で計算するためです。`nextCapacity` の拡張率(暫定 1.5 倍、「積んである作業」)の決定は `Deque` には及びません。容量の上限は 2^30 で、`IntDeque` なら 4 GiB なので、ジャッジのヒープ(約 922 MiB)では先にメモリが尽きます。コンストラクタの容量も 2 の冪に切り上げます(`IntDeque(3)` は容量 4)。`IntDeque(0)` は何も確保せず、最初の追加で既定の 8 になります。
+- **`removeAt` は短い側を動かします。** 両端に近い位置の削除が速くなります。`rotate(d)` も、右に `d` 回と左に `size - d` 回の少ない方で、1 要素ずつ動かします(確保なし)。
+- **構造変更の検出は `List` と同じです(§5.3.1)。** 追加と削除が `modCount` を進め、`forEach`、`forEachReversed`、for-in は変更を検出して例外にします。`set` と `rotate` は要素数を変えないので検出しません。何も変わらない `addAll`(0 個)と `-=`(一致なし)は `modCount` を進めません。
+- **`equals` は容量と内部の配置によらず、先頭からの並びで比べます。** `hashCode` は `List.hashCode` と同じ式です。`Double` は全順序です(§4.4)。
+- **持たないもの:** `subList`(§5.3.1)、`removeFirstOrDefault`(空かどうかは `isNotEmpty` で見る。必要になったら足す)、`any` や `count` などの高階関数、`sort`、`toIntList`(Deque のファイルが `IntList` を提出に引き込むため。`d.toIntArray().toIntList()` で書ける)。いずれもコンパイルエラーになるだけで、黙ってボクシングしたり誤答になったりはしません。
+- **バンドル:** `IntDeque` をキューとして使うだけの提出には、`IntDeque.kt`、`IntDequeConversions.kt`、`Support.kt` の 3 ファイルが入ります。`IntList` は入りません。出力全体は 18,234 バイトです(コミット `0844bb7` で、`IntDeque()` を作って `addLast`、`isNotEmpty`、`removeFirst` だけを呼ぶ 7 行の `Main.kt` を `./bundle -p` した値。利用コードも含むので、`Main.kt` によって変わる)。
+
 ### 5.5 ヒープ
 
 **単純ヒープ(`IntMinHeap`、`IntMaxHeap`)**
@@ -928,8 +947,9 @@ class KTypeList { /* KType を使って実装 */ }
 | タグの作成 | 完了。`v0.2.0` でペアヒープを、`v0.3.0`(2026-11-08)で全型の `List` をコンテストで使える。`v0.3.0` から、jar を GitHub のリリースで公開している |
 | 他の型の組み合わせと `Max` のペアヒープ | 完了。§5.1 の 18 クラスを 1 つのテンプレートから生成し、全ゲートを通過(分岐カバレッジ 100%、変異テスト 91%)、E2E 通過。AtCoder への提出は判断が変わらないので行っていない |
 | 全型の `List` | 完了。Int、Long、Double、Char の `List`、`SubList`、変換、ソートと、型変換 12 ファイルを生成し、全ゲートを通過(分岐カバレッジ 100%、変異テスト 93%)、E2E 通過。決めたことは §5.3.3。テンプレートは Int 版として `check` でコンパイルされる(§11)。実際の問題での提出は、判断が変わらないので行っていない |
-| 変異テストのゲートの見直し | 完了(2026-11-08)。検出率の閾値をやめ、確認済みの生存変異との差分をゲートにした(§7.1、`docs/mutation-gate.md`) |
-| `Deque`、単純ヒープ、インデックス付きヒープ、配列拡張 | **未実施** |
+| 変異テストのゲートの見直し | 完了(2026-11-08)。検出率の閾値をやめ、確認済みの生存変異との差分をゲートにした(§7.1、`docs/mutation-gate.md`)。x64 の CI の nightly でも通過した(`b1c07a3`) |
+| 全型の `Deque` | 完了(2026-11-08)。Int、Long、Double、Char の `Deque` と変換を生成し、全ゲートを通過(分岐カバレッジ 100%、変異テストは確認済みの生存変異の表に収まる)。決めたことは §5.4.1。E2E の `e2e/usage/deque-all` に、BFS と 0-1 BFS を入れた。AtCoder への提出は、判断が変わらないので行っていない |
+| 単純ヒープ、インデックス付きヒープ、配列拡張 | **未実施** |
 | ソートの実測と採否(§6)、argsort の代表問題 | **未実施** |
 
 **積んである作業**
@@ -939,11 +959,11 @@ class KTypeList { /* KType を使って実装 */ }
 | 作業 | 内容 | 手作業 |
 |---|---|---|
 | `nextCapacity` の拡張率の決定 | 暫定で 1.5 倍のまま | コードテスト(`e2e/experiments/GrowthRate.kt`) |
-| `Deque`、単純ヒープ、インデックス付きヒープ、配列拡張 | §5.4、§5.5、§5.8 | なし |
+| 単純ヒープ、インデックス付きヒープ、配列拡張 | §5.5、§5.8 | なし |
 | ソートの採否と argsort の代表問題 | §6。Phase 2 の完了条件。`Long`、`Double` の `argsort` と `sortByLong` などの既定である基数ソートも測る。基数ソートは測らずに `v0.3.0` に入れた(2026-11-08 に所有者が決定。`v0.2.0` には `Long`、`Double` の `argsort` がなく、悪くなるものがないため) | 提出 |
 | 標準と同じ書き方の不足 | `sumOf` は `Long` のセレクタだけなので、`doubles.sumOf { it * 2.0 }` はコンパイルエラーになる(`sumOfDouble` なら `sortByDouble` と揃う)。`String` から `CharList` を直接作れず、`s.toCharArray().toCharList()` と 2 回コピーする。どちらもコンパイルエラーか小さな無駄で、誤答や黙ったボクシングにはならないので、必要になったら足す | なし |
 | メモリの目標の確認 | §15。JVM の基礎分を差し引いて、`java.util` 比 1/3 以下を満たすかを確かめる | コードテスト |
-| `pitestBaseline` の CI での初回確認 | 新しい変異テストのゲート(§7.1、`docs/mutation-gate.md`)は、x64 の CI ではまだ動いていない。最初の nightly か `gh workflow run ci.yml --ref main` で通ることを確かめる。失敗したら、表にない変異が、手元と CPU が違うことによる `TIMED_OUT` と `SURVIVED` の揺れかどうかを見る | なし |
+| `Deque` の生存変異の表の x64 での確認 | 変異テストのゲートは、`Deque` を入れる前のコード(`b1c07a3`)では x64 の CI でも通った(`docs/mutation-gate.md` §5)。`Deque` の行を足した表は、まだ x64 で動いていない。PR #11 をマージした後の最初の nightly か `gh workflow run ci.yml --ref main` で通ることを確かめる。失敗したら、表にない変異が、手元と CPU が違うことによる `TIMED_OUT` と `SURVIVED` の揺れかどうかを見る | なし |
 | キーソートのファイル分割 | Int キーの `sortBy`、`sortWith`、`subList` だけの提出にも `KeySort.kt`(約 2 KB)が入る。`sortByLong` などを別ファイルに分けると減らせる。節約が小さいので急がない | なし |
 | コンパイル時間とソース長の上限の調査 | 後回し(2026-11-07 に決定、理由は §15)。Phase 4 でツリーを入れるときか、実際の提出が大きくなったときに行う | コードテスト(`e2e/experiments/size-probe.py`) |
 

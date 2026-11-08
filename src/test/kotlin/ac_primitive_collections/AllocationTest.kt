@@ -117,6 +117,51 @@ class AllocationTest {
     }
 
     @Test
+    fun dequeAsAQueueWithinCapacity() {
+        val deque = IntDeque(128)
+        assertReachesZeroAllocation("deque queue") {
+            // Ten passes of 100 leave the head somewhere new each time, so the indices wrap.
+            repeat(10) {
+                for (i in 0 until 100) deque.addLast(i)
+                while (deque.isNotEmpty()) sink += deque.removeFirst()
+            }
+        }
+    }
+
+    @Test
+    fun dequeAsAStackAndBothEndsWithinCapacity() {
+        val deque = LongDeque(128)
+        assertReachesZeroAllocation("deque both ends") {
+            for (i in 0 until 50) {
+                deque.addFirst(i.toLong())
+                deque.addLast(i.toLong())
+            }
+            while (deque.isNotEmpty()) sink += deque.removeLast() + deque.removeFirst()
+        }
+    }
+
+    private val deque = IntDeque(1024).also { d -> repeat(1000) { d.addFirst(it) } }
+
+    @Test
+    fun dequeReads() = assertReachesZeroAllocation("deque reads") {
+        sink += deque[sink.toInt() and 511] + deque.first() + deque.last()
+        if (5 in deque) sink++
+    }
+
+    @Test
+    fun dequeForEach() = assertReachesZeroAllocation("deque forEach") { deque.forEach { sink += it } }
+
+    @Test
+    fun forOverDeque() = assertReachesZeroAllocation("for in deque") {
+        for (x in deque) sink += x
+    }
+
+    @Test
+    fun forUntilOverDeque() = assertReachesZeroAllocation("for until over deque") {
+        for (i in 0 until deque.size) sink += deque[i]
+    }
+
+    @Test
     fun heapEqualsDoesNotCopyTheReservedCapacity() {
         val a = IntIntMinHeap()
         val b = IntIntMinHeap()

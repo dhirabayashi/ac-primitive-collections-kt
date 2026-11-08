@@ -31,6 +31,28 @@ internal fun nextCapacity(current: Int, required: Long): Int {
     return maxOf(required, minOf(grown, MAX_ARRAY_SIZE.toLong()), DEFAULT_CAPACITY.toLong()).toInt()
 }
 
+/** Ring buffers index with a mask, so their capacity is a power of two, and this is the largest one an array can have. */
+internal const val MAX_RING_CAPACITY: Int = 1 shl 30
+
+/**
+ * Returns the ring buffer size that holds [required] elements: the next power of two, at least [DEFAULT_CAPACITY].
+ *
+ * Growth doubles, whatever [nextCapacity] settles on, because the size must stay a power of two.
+ */
+internal fun ringCapacity(required: Long): Int {
+    if (required > MAX_RING_CAPACITY) throw IllegalStateException("Required capacity is too large: $required")
+    return powerOfTwoAtLeast(maxOf(required, DEFAULT_CAPACITY.toLong()).toInt())
+}
+
+/** Rounds a requested capacity up to a power of two. Keeps 0 and 1, so that `IntDeque(0)` reserves nothing. */
+internal fun checkRingInitialCapacity(capacity: Int): Int {
+    if (capacity < 0 || capacity > MAX_RING_CAPACITY) throw IllegalArgumentException("Invalid capacity: $capacity")
+    return if (capacity <= 1) capacity else powerOfTwoAtLeast(capacity)
+}
+
+/** For 2 or more. */
+private fun powerOfTwoAtLeast(n: Int): Int = Integer.highestOneBit(n - 1) shl 1
+
 internal fun checkInitialCapacity(capacity: Int): Int {
     if (capacity < 0 || capacity > MAX_ARRAY_SIZE) throw IllegalArgumentException("Invalid capacity: $capacity")
     return capacity

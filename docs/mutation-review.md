@@ -2,7 +2,19 @@
 
 `./gradlew pitest` で生存した変異を 1 件ずつ確認した記録です(§7.1)。
 
-## 結果(4 型の `List`、`SubList`、型変換、ペアヒープ 18 クラス)
+## 結果(最新: 4 型の `List`、`SubList`、型変換、`Deque`、ペアヒープ 18 クラス)
+
+2026-11-08 に、`Deque` 4 型と変換 4 ファイルを加えて実行した結果です(テストを足した後の 2 回目の実行)。`Deque` の生存変異は、`IntDeque` などの本体が 4 型とも同じ 14 件、`Conversions` が 2 件です(`Double` には範囲の変換がない)。1 回目の実行では `Conversions` が 3 件で、1 要素の昇順の範囲(`7..7`)を `addAll` するテストがなかったために、`first <= last` の境界の変異が生き残っていました。テストを足して検出しています。残りはすべて等価だと確認し、「確認済みの生存変異」の表に足しました。それ以外のクラスの生存変異は、表の範囲に収まっています(`pitestBaseline` で確認)。
+
+| 状態 | 件数 |
+|---|---|
+| KILLED | 4289 |
+| TIMED_OUT(検出扱い) | 189 |
+| MEMORY_ERROR(検出扱い) | 2 |
+| SURVIVED | 302 |
+| スコア | 93.68%(参考値。ゲートには使わない) |
+
+### `Deque` を加える前の実行(4 型の `List`、`SubList`、型変換、ペアヒープ 18 クラス)
 
 2026-11-08 の 1 回目の実行の結果です。ゲートを変えた後の 2 回目の実行では、TIMED_OUT が 149 件、SURVIVED が 251 件になりました(`docs/mutation-gate.md` §5)。生存変異は、3 回の実行のどれでも「確認済みの生存変異」の表に収まっています(2 回目と 3 回目は `pitestBaseline` で確認)。
 
@@ -49,6 +61,13 @@
 | `KTypeListSort.kt` | `mergeSortKType` | `MathMutator` | `Replaced integer subtraction with addition` | 1 | `to - from` を `to + from` に(77 行) | `n` は作業領域の大きさと打ち切りの判定にのみ使う。実際の添字は `to` で制限されるので結果は同じ(余分な確保のみ) |
 | `KTypeListSort.kt` | `mergeSortKType` | `ConditionalsBoundaryMutator` | `changed conditional boundary` | 5 | 挿入ソートとマージの境界(80、85、96 行)、作業領域の計算の境界(89 行)、打ち切りの境界(101 行) | 挿入ソートとマージはラン長が 1 違うだけで結果は同じ。作業領域は大きくなるだけ。打ち切りは何もしないパスが 1 回増えるだけ |
 | `KTypeListSort.kt` | `mergeKType` | `ConditionalsBoundaryMutator` | `changed conditional boundary` | 1 | `<= 0` を `< 0` に(マージ省略の判定、121 行) | 省略しなくても安定マージの結果は同じ |
+| `KTypeDeque.kt` | `addFirst`、`addLast`、`finishAdd`、`removeFirst`、`removeLast`、`removeAt`、`clear`、`minusAssign` | `MathMutator` | `Replaced integer addition with subtraction` | 1 | `modCount++` を `modCount--` に(75、83、127、135、143、169、183、317 行) | `KTypeList` と同じく、`modCount` は変化の有無だけを比較するので等価 |
+| `KTypeDeque.kt` | `removeAt` | `ConditionalsBoundaryMutator` | `changed conditional boundary` | 2 | 前を詰めるループの `i > 0` を `>= 0` に(156 行)、後ろを詰めるループの `i < length - 1` を `<=` に(163 行) | 1 回多い代入は、削除後に要素の範囲の外になる位置(先頭の 1 つ前、末尾の 1 つ後)にだけ書く |
+| `KTypeDeque.kt` | `rotate` | `ConditionalsBoundaryMutator` | `changed conditional boundary` | 1 | 回す向きを選ぶ `right <= n - right` を `<` に(212 行) | 右に `d` 回と左に `size - d` 回は同じ結果になる。変わるのは動かす回数だけ |
+| `KTypeDeque.kt` | `rotate` | `MathMutator` | `Replaced integer subtraction with addition` | 1 | 同じ条件の `n - right` を `n + right` に(212 行) | 同上 |
+| `KTypeDeque.kt` | `rotate` | `NegateConditionalsMutator` | `negated conditional` | 1 | 同じ条件を反転(212 行) | 同上 |
+| `KTypeDeque.kt` | `plus` | `MathMutator` | `Replaced long addition with subtraction` | 1 | `plus(other)` の `length + other.length` を `length - other.length` に(276 行) | 確保が小さくなるだけで、続く `addAll` が必要な分だけ拡張する |
+| `KTypeDequeConversions.kt` | `addAll` | `ConditionalsBoundaryMutator` | `changed conditional boundary` | 2 | コンパイラが生成する `step > 0` を `>= 0` に、`step < 0` を `<= 0` に(48 行) | `KTypeListConversions.kt` と同じ。プログレッションの `step` は 0 にならないので等価 |
 | `KTypeVTypeMinHeap.kt` | `add`、`removeFirst`、`replaceFirst`、`clear` | `MathMutator` | `Replaced integer addition with subtraction` | 1 | `modCount++` を `modCount--` に | `KTypeList` と同じく、`modCount` は変化の有無だけを比較するので等価 |
 | `KTypeVTypeMinHeap.kt` | `add` | `MathMutator` | `Replaced long addition with subtraction` | 1 | `n + 1L` を `n - 1L` に | `KTypeList` の `add` と同じ理由で結果が同じ |
 | `KTypeVTypeMinHeap.kt` | `removeFirst` | `ConditionalsBoundaryMutator` | `changed conditional boundary` | 1 | `last > 0` を `>= 0` に | 空になるときの `siftDown` は、先頭に自分自身を書き戻すだけ。`Obj` ではその後に同じ位置を `null` にする |

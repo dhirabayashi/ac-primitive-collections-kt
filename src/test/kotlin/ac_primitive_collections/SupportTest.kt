@@ -33,6 +33,33 @@ class SupportTest {
     }
 
     @Test
+    fun ringCapacityIsAPowerOfTwoOfAtLeastTheDefault() {
+        assertEquals(DEFAULT_CAPACITY, ringCapacity(0))
+        assertEquals(DEFAULT_CAPACITY, ringCapacity(1))
+        assertEquals(DEFAULT_CAPACITY, ringCapacity(DEFAULT_CAPACITY.toLong()))
+        assertEquals(16, ringCapacity(9))
+        assertEquals(16, ringCapacity(16))
+        assertEquals(32, ringCapacity(17))
+        assertEquals(MAX_RING_CAPACITY, ringCapacity(MAX_RING_CAPACITY - 1L))
+        assertEquals(MAX_RING_CAPACITY, ringCapacity(MAX_RING_CAPACITY.toLong()))
+        assertFailsWith<IllegalStateException> { ringCapacity(MAX_RING_CAPACITY + 1L) }
+        assertFailsWith<IllegalStateException> { ringCapacity(Long.MAX_VALUE) }
+    }
+
+    @Test
+    fun checkRingInitialCapacityRoundsUpAndRejectsBadValues() {
+        assertEquals(0, checkRingInitialCapacity(0))
+        assertEquals(1, checkRingInitialCapacity(1))
+        assertEquals(2, checkRingInitialCapacity(2))
+        assertEquals(4, checkRingInitialCapacity(3))
+        assertEquals(8, checkRingInitialCapacity(8))
+        assertEquals(16, checkRingInitialCapacity(9))
+        assertEquals(MAX_RING_CAPACITY, checkRingInitialCapacity(MAX_RING_CAPACITY))
+        assertFailsWith<IllegalArgumentException> { checkRingInitialCapacity(-1) }
+        assertFailsWith<IllegalArgumentException> { checkRingInitialCapacity(MAX_RING_CAPACITY + 1) }
+    }
+
+    @Test
     fun checkNonNegativeSizeRejectsNegatives() {
         assertEquals(0, checkNonNegativeSize(0))
         assertFailsWith<IllegalArgumentException> { checkNonNegativeSize(-1) }
