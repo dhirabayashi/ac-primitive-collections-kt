@@ -21,6 +21,8 @@ class CodegenTest {
     private val conversions = elementTypes.flatMap { source -> (elementTypes - source).map { "${source}ListMapTo$it" } }
     private val lists = elementTypes.flatMap { listOf("${it}List", "${it}ListConversions", "${it}ListSort", "${it}SubList") }
     private val listTests = elementTypes.flatMap { listOf("${it}ListDifferentialTest", "${it}ListTest", "${it}SubListTest") }
+    private val deques = elementTypes.flatMap { listOf("${it}Deque", "${it}DequeConversions") }
+    private val dequeTests = elementTypes.flatMap { listOf("${it}DequeDifferentialTest", "${it}DequeTest") }
 
     private fun names(generated: Map<String, String>) =
         generated.keys.map { it.removePrefix("ac_primitive_collections/").removeSuffix(".kt") }.toSet()
@@ -30,13 +32,13 @@ class CodegenTest {
 
     @Test
     fun generatesExactlyThePlannedLibraryFiles() {
-        assertEquals((pairHeaps + lists + conversions).toSet(), names(main))
+        assertEquals((pairHeaps + lists + conversions + deques).toSet(), names(main))
     }
 
     @Test
     fun generatesExactlyThePlannedTestFiles() {
         assertEquals(
-            (pairHeaps.map { it + "Test" } + listTests + conversions.map { it + "Test" }).toSet(),
+            (pairHeaps.map { it + "Test" } + listTests + conversions.map { it + "Test" } + dequeTests).toSet(),
             names(test),
         )
     }
