@@ -28,9 +28,6 @@ class SourceFile(val name: String, val text: String) {
     val identifiers: Set<String>
     val declarations: List<Declaration>
 
-    /** Functions declared inside classes. A call by such a name in this file reaches the member first. */
-    val memberFunctions: Set<String>
-
     init {
         val annotations = ArrayList<String>()
         val importLines = ArrayList<String>()
@@ -58,11 +55,6 @@ class SourceFile(val name: String, val text: String) {
         val bodyTokens = lexed.tokens.filter { it.start >= bodyStart }
         identifiers = bodyTokens.filter { it.isIdentifier }.mapTo(HashSet()) { it.text }
         declarations = parseTopLevel(bodyTokens)
-        val topLevelNames = declarations.mapTo(HashSet()) { it.name }
-        memberFunctions = bodyTokens.indices
-            .filter { bodyTokens[it].text == "fun" && bodyTokens[it].isIdentifier && isDeclarationKeyword(bodyTokens, it) }
-            .mapNotNullTo(HashSet()) { parseDeclaration(bodyTokens, it)?.name }
-            .filterTo(HashSet()) { it !in topLevelNames || isAlsoMember(bodyTokens, it) }
     }
 
     /** The body without comments, and without blank lines left behind. For `--strip-comments`. */
@@ -82,19 +74,6 @@ class SourceFile(val name: String, val text: String) {
 }
 
 /** True if [name] is declared with `fun` inside braces, even if it is also declared at the top level. */
-private fun isAlsoMember(tokens: List<Token>, name: String): Boolean {
-    var depth = 0
-    for (i in tokens.indices) {
-        val token = tokens[i]
-        if (token.kind == Token.Kind.SYMBOL && token.text == "{") depth++
-        if (token.kind == Token.Kind.SYMBOL && token.text == "}") depth--
-        if (depth > 0 && token.text == "fun" && token.isIdentifier && isDeclarationKeyword(tokens, i)) {
-            if (parseDeclaration(tokens, i)?.name == name) return true
-        }
-    }
-    return false
-}
-
 private val MODIFIERS = setOf(
     "public", "internal", "private", "protected", "inline", "operator", "infix", "tailrec", "external", "suspend",
     "const", "data", "value", "annotation", "enum", "sealed", "abstract", "open", "final", "expect", "actual", "fun", "lateinit",

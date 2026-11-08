@@ -76,8 +76,9 @@ object Bundler {
             for (file in library) {
                 if (file !in included && file.declarations.any { it.name in mentioned && isReachable(it) }) {
                     included += file
-                    // A call by a member's name in the file reaches the member, not a same-named extension elsewhere.
-                    mentioned += file.identifiers - file.memberFunctions
+                    // Every name counts, members' too: a member may hand its work to a same-named extension in
+                    // another file. A missing file is a compile error in a contest, an extra one only costs bytes.
+                    mentioned += file.identifiers
                     changed = true
                 }
             }

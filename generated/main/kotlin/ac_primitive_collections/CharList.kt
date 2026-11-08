@@ -453,10 +453,14 @@ class CharList @PublishedApi internal constructor(
         private val expected = list.modCount
         private var next = 0
 
-        /** Checks here too: after a clear, the size alone would end the loop as if it had finished. */
+        /**
+         * After a clear, the size alone would end the loop as if it had finished, so the end checks too. Only the
+         * end: [nextChar] already checks each element, and a loop can only stop silently here.
+         */
         override fun hasNext(): Boolean {
+            if (next < list.length) return true
             if (list.modCount != expected) throwConcurrentModification()
-            return next < list.length
+            return false
         }
 
         override fun nextChar(): Char {

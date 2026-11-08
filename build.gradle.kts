@@ -13,7 +13,12 @@ val judgeJdkFeature = providers.gradleProperty("judgeJdkFeature").get().toInt()
 val judgeKotlinVersion = providers.gradleProperty("judgeKotlinVersion").get()
 
 group = "ac_primitive_collections"
-version = "0.1.0-SNAPSHOT"
+// A build at a release tag (v and dotted digits) carries its version; any other build is a snapshot.
+// See the release procedure in docs/PLAN.md, Phase 1.
+version = providers.exec {
+    commandLine("git", "tag", "--points-at", "HEAD")
+    isIgnoreExitValue = true
+}.standardOutput.asText.get().lines().firstOrNull { Regex("""v\d+(\.\d+)*""").matches(it) }?.removePrefix("v") ?: "0.0.0-SNAPSHOT"
 
 allprojects {
     repositories {
@@ -60,10 +65,13 @@ tasks.check {
 // ---- The release jar. See docs/PLAN.md, section 10.2. ----
 
 tasks.jar {
+    // The install script names the file this way too, so the version lives in the manifest instead.
+    archiveFileName = "ac-primitive-collections.jar"
+    manifest { attributes("Implementation-Version" to project.version) }
     from("LICENSE") { into("META-INF") }
     from("THIRD_PARTY_NOTICES") { into("META-INF") }
     doLast {
-        logger.lifecycle("Jar size: ${archiveFile.get().asFile.length()} bytes (budget 1.5 MB, section 7.6)")
+        logger.lifecycle("Jar ${project.version}: ${archiveFile.get().asFile.length()} bytes (budget 1.5 MB, section 7.6)")
     }
 }
 

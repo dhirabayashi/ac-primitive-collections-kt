@@ -6,11 +6,11 @@
 
 | 状態 | 件数 |
 |---|---|
-| KILLED | 3403 |
-| TIMED_OUT(検出扱い) | 144 |
-| MEMORY_ERROR(検出扱い) | 1 |
-| SURVIVED | 257 |
-| スコア | 93.25%(基準 90%) |
+| KILLED | 3426 |
+| TIMED_OUT(検出扱い) | 151 |
+| MEMORY_ERROR(検出扱い) | 3 |
+| SURVIVED | 249 |
+| スコア | 93.50%(基準 90%) |
 
 ペアヒープの生存変異は 18 クラスとも同じ 10 件で、キーの型、値の型、向きによる違いはありません(`mutations.xml` を集計して確認)。`List`、`SubList`、ソートの生存変異は 4 型とも下の表の箇所に収まり、新しく追加した `KeySort.kt` には生存変異がありません。`List` の件数は 6〜13 件と型で異なりますが、同じ変異が実行ごとに `SURVIVED` と `TIMED_OUT` のどちらにもなるためです(`IntList` の `removeLast` の `modCount++` は、前の実行では `TIMED_OUT`、この実行では `SURVIVED`)。そのためスコアも実行ごとに少し変わります(同じコードで 0.1 ポイント程度)。
 
@@ -27,7 +27,7 @@
 
 | 箇所 | 変異 | 判定の理由 |
 |---|---|---|
-| `IntList.kt` `add` 73、`clear` 205、`finishRemoveIf` 191、`openGap` 737、`removeLast` 129、`removeRange` 145、`swapRemove` 154、`truncate` 200 | `modCount++` を `modCount--` に | `modCount` は変化の有無だけを比較するので等価 |
+| `IntList.kt` `add` 73、`clear` 205、`finishRemoveIf` 191、`openGap` 741、`removeLast` 129、`removeRange` 145、`swapRemove` 154、`truncate` 200 | `modCount++` を `modCount--` に | `modCount` は変化の有無だけを比較するので等価 |
 | `IntList.kt` `add` 70 | `n + 1L` を `n - 1L` に | `grow` は容量満杯のときだけ呼ばれ、`nextCapacity` は最低でも 1.5 倍(下限 8)を返すので結果が同じ |
 | `IntList.kt` `removeAt` 116 | `index >= length` を `>` に | `index == length` は続く `removeRange` の範囲検査で同じ例外になる |
 | `IntList.kt` `resize` 221 | `newSize <= old` を `<` に | 等しいときは長さ 0 の `openGap` になり、何も起きない |

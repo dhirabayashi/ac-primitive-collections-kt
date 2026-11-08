@@ -17,7 +17,7 @@ docker build -q -t "$image" \
 
 bundler=$root/bundler/build/install/bundler/bin/bundler
 checker=$root/bytecode-check/build/install/bytecode-check/bin/bytecode-check
-library_jar=$root/build/libs/ac-primitive-collections-kt-0.1.0-SNAPSHOT.jar
+library_jar=$root/build/libs/ac-primitive-collections.jar
 
 # Limit the container to one CPU so that the JVM picks Serial GC, as on the judge.
 in_judge() {
@@ -37,7 +37,8 @@ for sample in "$root"/e2e/usage/*/; do
     else
       cp "$sample/Main.kt" "$dir/Main.kt"
       # A rehearsal of the install proposal: the same script, with a file URL in place of the release.
-      sha=$(shasum -a 256 "$library_jar" 2>/dev/null | cut -d' ' -f1 || sha256sum "$library_jar" | cut -d' ' -f1)
+      # A pipeline's status is its last command's, so pick the tool first rather than falling back with ||.
+      if command -v sha256sum >/dev/null; then sha=$(sha256sum "$library_jar" | cut -d' ' -f1); else sha=$(shasum -a 256 "$library_jar" | cut -d' ' -f1); fi
       cp "$library_jar" "$dir/release.jar"
       cp "$root/install/install.sh" "$dir/install.sh"
       in_judge "$dir" "sh ./install.sh file:///work/release.jar $sha ac-primitive-collections.jar" >/dev/null

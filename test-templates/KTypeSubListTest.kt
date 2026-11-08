@@ -371,6 +371,21 @@ class KTypeSubListTest {
         assertTrue(iterator.hasNext())
         assertEquals(v(1), iterator.next())
         assertFalse(iterator.hasNext())
+        assertFailsWith<NoSuchElementException> { iterator.next() }
+    }
+
+    @Test
+    fun changingTheParentFromALoopOverTheViewFails() {
+        val loops = listOf<(KTypeList, KTypeSubList) -> Unit>(
+            { list, view -> view.forEach { list.add(v(9)) } },
+            { list, view -> view.forEachIndexed { _, _ -> list.add(v(9)) } },
+            { list, view -> for (x in view) list.add(v(9)) },
+            { list, view -> for (x in view) list.removeLast() },
+        )
+        for (loop in loops) {
+            val list = listOfInts(1, 2, 3, 4)
+            assertFailsWith<ConcurrentModificationException> { loop(list, list.subList(0, 2)) }
+        }
     }
 
     @Test

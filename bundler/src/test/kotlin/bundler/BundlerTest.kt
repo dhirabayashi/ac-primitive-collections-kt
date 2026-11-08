@@ -52,13 +52,13 @@ class BundlerTest {
     }
 
     @Test
-    fun aMemberCallInsideTheLibraryDoesNotPullInTheSameNamedExtension() {
-        val owner = lib("L.kt", "class L { fun addAll(x: Int) {} ; fun twice() { addAll(1); addAll(2) } }")
-        val extension = lib("Ext.kt", "fun L.addAll(x: Iterable<Int>) {}")
-        val noUse = Bundler.bundle(main("fun main() { L().twice() }"), listOf(owner, extension), options)
-        assertEquals(listOf("L.kt"), noUse.includedFiles)
-        val userUse = Bundler.bundle(main("fun main() { L().addAll(listOf(1)) }"), listOf(owner, extension), options)
-        assertEquals(listOf("Ext.kt", "L.kt"), userUse.includedFiles)
+    fun aMemberThatHandsItsWorkToASameNamedExtensionPullsItIn() {
+        // The shape of SubList.sortWith, which calls the list's sortWith extension, with no other name to lead there.
+        val list = lib("L.kt", "class L")
+        val view = lib("V.kt", "class V(val parent: L) { fun sortAll() { parent.sortAll(0) } }")
+        val extension = lib("Ext.kt", "fun L.sortAll(from: Int) {}")
+        val result = Bundler.bundle(main("fun main() { V(L()).sortAll() }"), listOf(list, view, extension), options)
+        assertEquals(listOf("Ext.kt", "L.kt", "V.kt"), result.includedFiles)
     }
 
     @Test

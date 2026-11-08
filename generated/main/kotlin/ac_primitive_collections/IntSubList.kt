@@ -182,23 +182,28 @@ class IntSubList @PublishedApi internal constructor(
         expectedModCount = parent.modCount
     }
 
-    /** [clear] moves expectedModCount along with the parent, so comparing it is what catches a clear from [action]. */
+    /**
+     * Changes through the view, [clear] included, also move the parent's modCount, so one comparison with its
+     * starting value per element catches changes from either side.
+     */
     inline fun forEach(action: (Int) -> Unit) {
-        val expected = expectedModCount
+        checkParent()
+        val expected = parent.modCount
         var i = 0
-        while (i < size) {
+        while (i < length) {
             action(parent.elements[offset + i])
-            if (expectedModCount != expected) throwConcurrentModification()
+            if (parent.modCount != expected) throwConcurrentModification()
             i++
         }
     }
 
     inline fun forEachIndexed(action: (index: Int, value: Int) -> Unit) {
-        val expected = expectedModCount
+        checkParent()
+        val expected = parent.modCount
         var i = 0
-        while (i < size) {
+        while (i < length) {
             action(i, parent.elements[offset + i])
-            if (expectedModCount != expected) throwConcurrentModification()
+            if (parent.modCount != expected) throwConcurrentModification()
             i++
         }
     }
@@ -219,20 +224,26 @@ class IntSubList @PublishedApi internal constructor(
         return true
     }
 
-    operator fun iterator(): IntIterator = ViewIterator(this)
+    operator fun iterator(): IntIterator {
+        checkParent()
+        return ViewIterator(this)
+    }
 
+    /** Compares the parent's modCount as [forEach] does, and like the list's iterator, once per element plus once at the end. */
     private class ViewIterator(private val view: IntSubList) : IntIterator() {
-        private val expected = view.expectedModCount
+        private val expected = view.parent.modCount
         private var next = 0
 
         override fun hasNext(): Boolean {
-            if (view.expectedModCount != expected) throwConcurrentModification()
-            return next < view.size
+            if (next < view.length) return true
+            if (view.parent.modCount != expected) throwConcurrentModification()
+            return false
         }
 
         override fun nextInt(): Int {
-            if (view.expectedModCount != expected) throwConcurrentModification()
-            return view[next++]
+            if (view.parent.modCount != expected) throwConcurrentModification()
+            if (next >= view.length) throwEmpty()
+            return view.parent.elements[view.offset + next++]
         }
     }
 
