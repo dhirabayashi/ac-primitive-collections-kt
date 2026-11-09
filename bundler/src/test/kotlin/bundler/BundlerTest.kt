@@ -94,6 +94,46 @@ class BundlerTest {
     }
 
     @Test
+    fun anExtensionOnAStandardArrayNeedsANameThatMakesThatArray() {
+        val intArrays = lib("IntArrayExtensions.kt", "fun IntArray.lowerBound(x: Int) = 0")
+        val longArrays = lib("LongArrayExtensions.kt", "fun LongArray.lowerBound(x: Long) = 0")
+        val list = lib(
+            "LongL.kt",
+            "class LongL(val a: LongArray) { fun lowerBound(x: Long) = 0\nfun order(): IntArray = IntArray(1)\nfun toLongArray(): LongArray = a\n" +
+                "fun addAll(b: IntArray) {}\nprivate fun keys(): IntArray = IntArray(1)\nfun sort() { val keys = IntArray(1) } }",
+        )
+        val all = listOf(intArrays, longArrays, list)
+        fun included(body: String) = Bundler.bundle(main(body), all, options).includedFiles
+        // The list's own lowerBound, its arrays, and its private function bring no array extensions.
+        assertEquals(listOf("LongL.kt"), included("fun main() { LongL(x).lowerBound(1L) }"))
+        // A function that the user calls brings its return type's.
+        assertEquals(listOf("IntArrayExtensions.kt", "LongL.kt"), included("fun main() { LongL(x).order().lowerBound(1) }"))
+        assertEquals(listOf("LongArrayExtensions.kt", "LongL.kt"), included("fun main() { LongL(x).toLongArray().lowerBound(1L) }"))
+        assertEquals(listOf("IntArrayExtensions.kt"), included("fun main() { IntArray(3).lowerBound(1) }"))
+        assertEquals(listOf("IntArrayExtensions.kt"), included("fun main() { intArrayOf(1).lowerBound(1) }"))
+        assertEquals(listOf("IntArrayExtensions.kt"), included("fun main() { listOf(1).toIntArray().lowerBound(1) }"))
+        assertEquals(listOf("IntArrayExtensions.kt", "LongArrayExtensions.kt"), included("fun f(a: IntArray, b: LongArray) = a.lowerBound(1) + b.lowerBound(1)"))
+        assertEquals(emptyList(), included("fun f(a: IntArray) = a.size"))
+        assertEquals(emptyList(), included("fun f(a: List<Int>) = a.lowerBound(1)"))
+    }
+
+    @Test
+    fun publicFunctionsReportTheirReturnTypes() {
+        val file = lib(
+            "F.kt",
+            "fun <T> IntArray.a(x: (Int) -> Long = { 0L }): LongArray = LongArray(1)\n" +
+                "class C { inline fun b(): Array<IntArray> { return arrayOf() }\n" +
+                "internal fun c(): IntArray = IntArray(0)\nfun d() = 1\nfun e(): Int\nfun f(): DoubleArray }",
+        )
+        assertEquals(setOf("LongArray"), file.publicReturnTypes["a"])
+        assertEquals(setOf("Array", "IntArray"), file.publicReturnTypes["b"])
+        assertEquals(null, file.publicReturnTypes["c"])
+        assertEquals(emptySet(), file.publicReturnTypes["d"])
+        assertEquals(setOf("Int"), file.publicReturnTypes["e"])
+        assertEquals(setOf("DoubleArray"), file.publicReturnTypes["f"])
+    }
+
+    @Test
     fun aNullableReceiverCountsAsItsType() {
         val owner = lib("N.kt", "class N")
         val extension = lib("NExt.kt", "fun N?.orNew() = this")

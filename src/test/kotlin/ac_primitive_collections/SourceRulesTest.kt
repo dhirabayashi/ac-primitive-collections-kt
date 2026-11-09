@@ -55,6 +55,47 @@ class SourceRulesTest {
         assertEquals(emptyList(), clashes)
     }
 
+    /**
+     * The bundler brings array extensions for an array that a called library function returns, and finds those
+     * from the declared return types in the source (`bundler.Bundler`). An inferred one would be missed, and a
+     * contest submission would then fail to compile. So every public method that returns a standard array must
+     * declare it in the source.
+     */
+    @Test
+    fun functionsThatReturnArraysDeclareItForTheBundler() {
+        val parsed = sources(libraryRoots).associate { it.name to bundler.SourceFile(it.name, it.readText()) }
+        val arrays = bundler.Bundler.STANDARD_ARRAYS.associateBy { Class.forName("[" + jvmDescriptor(it)) }
+        val classes = File("build/classes/kotlin/main/ac_primitive_collections").listFiles { f -> f.extension == "class" }.orEmpty()
+        var checked = 0
+        val missing = classes.flatMap { file ->
+            val type = Class.forName("ac_primitive_collections." + file.nameWithoutExtension)
+            if (!java.lang.reflect.Modifier.isPublic(type.modifiers)) return@flatMap emptyList()
+            // Top-level functions live in the facade class `<File>Kt`, and a class in the file that declares it.
+            val outer = type.name.substringAfterLast('.').substringBefore('$')
+            val source = parsed[outer.removeSuffix("Kt") + ".kt"]?.takeIf { outer.endsWith("Kt") }
+                ?: parsed.values.single { f -> f.declarations.any { it.isType && it.name == outer } }
+            val internal = source.declarations.filter { it.visibility != bundler.Declaration.Visibility.PUBLIC }.map { it.name }.toSet()
+            type.declaredMethods.filter { java.lang.reflect.Modifier.isPublic(it.modifiers) && it.returnType in arrays && it.name !in internal }.mapNotNull { method ->
+                checked++
+                val array = arrays.getValue(method.returnType)
+                if (array in source.publicReturnTypes[method.name].orEmpty()) null else "${source.name}: ${method.name} returns $array"
+            }
+        }
+        assertEquals(emptyList(), missing.distinct())
+        assertTrue(checked > 0, "Some method should return an array")
+    }
+
+    private fun jvmDescriptor(array: String) = when (array.removeSuffix("Array")) {
+        "Int" -> "I"
+        "Long" -> "J"
+        "Double" -> "D"
+        "Char" -> "C"
+        "Boolean" -> "Z"
+        "Byte" -> "B"
+        "Short" -> "S"
+        else -> "F"
+    }
+
     private val iterableOfProgressionType = Regex("""Iterable<(Int|Long|Char)>""")
 
     /**
