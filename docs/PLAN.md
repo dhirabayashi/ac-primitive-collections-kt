@@ -1038,6 +1038,7 @@ class KTypeList { /* KType を使って実装 */ }
 | メモリの目標の確認 | §15。JVM の基礎分を差し引いて、`java.util` 比 1/3 以下を満たすかを確かめる | コードテスト |
 | `Deque` の生存変異の表の x64 での確認 | 変異テストのゲートは、`Deque` を入れる前のコード(`b1c07a3`)では x64 の CI でも通った(`docs/mutation-gate.md` §5)。`Deque` の行を足した表は、まだ x64 で動いていない。PR #11 をマージした後の最初の nightly か `gh workflow run ci.yml --ref main` で通ることを確かめる。失敗したら、表にない変異が、手元と CPU が違うことによる `TIMED_OUT` と `SURVIVED` の揺れかどうかを見る | なし |
 | キーソートのファイル分割 | Int キーの `sortBy`、`sortWith`、`subList` だけの提出にも `KeySort.kt`(約 2 KB)が入る。`sortByLong` などを別ファイルに分けると減らせる。節約が小さいので急がない | なし |
+| 範囲オブジェクトを作る呼び出しの静的検出 | `AllocationTest` はブロック全体の確保量を測るので、テストコード自身の確保と区別できない。2026-11-10 に、`indexedHeapAsInDijkstra` の `for (i in 0 until 100 step 3)` が `IntRange` と `IntProgression`(計 48 バイト)を作り、JIT が消さなかった実行で失敗した(手元で 6 回中 2 回)。`while` に書き換えて直した(8 回中 0 回)。`BoxingChecker` は `valueOf` しか見ないので、ライブラリに `step` などのループが入ってもゲートでは確実に検出できない。`RangesKt.step` や `reversed` など、範囲オブジェクトを作る呼び出しも報告するよう広げると、ライブラリと `AllocationTest` のブロックの両方を JIT によらずに確かめられる。今は該当がない(`templates/` と `AllocationTest` のバイトコードで確認)ので急がない | なし |
 | コンパイル時間とソース長の上限の調査 | 後回し(2026-11-07 に決定、理由は §15)。Phase 4 でツリーを入れるときか、実際の提出が大きくなったときに行う | コードテスト(`e2e/experiments/size-probe.py`) |
 
 ### Phase 3: ハッシュ

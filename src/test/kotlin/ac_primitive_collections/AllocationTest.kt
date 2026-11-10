@@ -143,7 +143,12 @@ class AllocationTest {
         val heap = LongIndexedMinHeap(100)
         assertReachesZeroAllocation("indexed heap") {
             for (i in 0 until 100) heap[i] = (i * 7919 % 101).toLong()
-            for (i in 0 until 100 step 3) heap.decreaseKey(i, -1L)
+            // Not `0 until 100 step 3`: `step` builds an IntRange and an IntProgression, which the JIT does not always remove.
+            var i = 0
+            while (i < 100) {
+                heap.decreaseKey(i, -1L)
+                i += 3
+            }
             heap.remove(50)
             heap.forEachUnordered { index, key -> sink += index + key }
             while (heap.isNotEmpty()) {
