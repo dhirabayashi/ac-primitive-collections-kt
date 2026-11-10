@@ -106,6 +106,9 @@ class BundlerTest {
         fun included(body: String) = Bundler.bundle(main(body), all, options).includedFiles
         // The list's own lowerBound, its arrays, and its private function bring no array extensions.
         assertEquals(listOf("LongL.kt"), included("fun main() { LongL(x).lowerBound(1L) }"))
+        // Nor does an array next to it, since only the list's code names lowerBound.
+        assertEquals(listOf("LongL.kt"), included("fun main() { LongL(IntArray(3)).order() }"))
+        assertEquals(listOf("LongL.kt"), included("fun main() { LongL(LongArray(3)).toLongArray() }"))
         // A function that the user calls brings its return type's.
         assertEquals(listOf("IntArrayExtensions.kt", "LongL.kt"), included("fun main() { LongL(x).order().lowerBound(1) }"))
         assertEquals(listOf("LongArrayExtensions.kt", "LongL.kt"), included("fun main() { LongL(x).toLongArray().lowerBound(1L) }"))

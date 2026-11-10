@@ -85,6 +85,27 @@ class SourceRulesTest {
         assertTrue(checked > 0, "Some method should return an array")
     }
 
+    private val arrayExtensionClass = Regex("""(?:Int|Long|Double|Char|Boolean|Byte|Short|Float)ArrayExtensionsKt""")
+
+    /**
+     * The bundler matches an array extension only against the user's names, not the library's (`bundler.Bundler`),
+     * so no other library class may call one: a contest submission would then fail to compile. A class that calls
+     * or inlines one names its class in the constant pool or in the inline debug map, so the bytes show it.
+     */
+    @Test
+    fun onlyTheUsersCodeCallsArrayExtensions() {
+        val classes = File("build/classes/kotlin/main/ac_primitive_collections").listFiles { f -> f.extension == "class" }.orEmpty()
+        var facades = 0
+        val problems = classes.flatMap { file ->
+            val own = file.nameWithoutExtension.substringBefore('$')
+            if (arrayExtensionClass.matches(own)) facades++
+            val named = arrayExtensionClass.findAll(String(file.readBytes(), Charsets.ISO_8859_1)).map { it.value }.toSet()
+            (named - own).map { "${file.name} refers to $it" }
+        }
+        assertEquals(emptyList(), problems)
+        assertEquals(4, facades, "Each element type should have its array extensions")
+    }
+
     private fun jvmDescriptor(array: String) = when (array.removeSuffix("Array")) {
         "Int" -> "I"
         "Long" -> "J"

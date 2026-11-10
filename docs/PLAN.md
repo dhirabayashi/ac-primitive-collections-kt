@@ -437,7 +437,7 @@ K はキー、V は値です。ソース上で約 100 クラスを見込みま�
 
 **単純ヒープ(`IntMinHeap`、`IntMaxHeap`)**
 
-`add`、`first`、`removeFirst`、`firstOrDefault`、`removeFirstOrDefault`、`replaceFirst`(pop + push を 1 回の sift で)、`addAll`、配列から O(n) で構築、`drainSortedTo`、`forEachUnordered`。
+`add`、`first`、`removeFirst`、`firstOrDefault`、`removeFirstOrDefault`、`replaceFirst`(pop + push を 1 回の sift で)、`addAll`、配列から O(n) で構築、`drainSortedTo`、`forEachUnordered`。実装では `drainSortedTo` を `toSortedArray` に置き換えました。実装した操作の一覧は §5.5.1 にあります。
 
 **ペアヒープ(`LongIntMinHeap`)**
 
@@ -814,10 +814,13 @@ JUnit 5 + kotlin-test を使います。操作列の実行器は自作して依�
 - 手元では `import` で開発し、バンドラの出力を提出します。両方の動作の一致を E2E で確認します。
 - **依存は余分に含める側に倒します。** 取りこぼすとコンテスト中に CE になりますが、余分なファイルはサイズが増えるだけだからです。含めたファイルの識別子は、メンバーの名前も含めてすべて依存の候補にします(メンバーが同名の拡張関数に処理を任せることがあるため。除外していたときと比べて、`List` を使う提出が約 1.3 KB 増える)。そのため、`IntList.mapToDouble` と `DoubleList.argsort()` だけの提出にも、`IntListSort.kt` が入ります。
 - ライブラリの型への拡張関数は、その型のファイルが含まれているときだけ、名前の一致を依存と見なします。`sortBy` などは型ごとにあるので、名前だけで解決すると、1 つの型を使う提出に 4 型すべてが入るためです。ある型の値を持つコードは、どこかでその型の名前に到達するので、必要なものは漏れません。
-- **標準の配列への拡張関数(`IntArray.lowerBound` など、§5.8.3)は、利用コードがその配列を持ちうるときだけ依存と見なします**(2026-11-10)。持ちうるのは、配列の型名(大文字小文字を区別しない)が、利用コードの識別子(`IntArray(n)`、`intArrayOf`、`toIntArray` など)か、**利用コードが名前で呼ぶライブラリの公開関数の、宣言された戻り値の型**(`argsort(): IntArray`、`prefixSum(): LongArray` など)に現れるときです。ライブラリの本体での使用は数えません。`IntList` は要素を `IntArray` に、ソートのキーを `LongArray` に持ち、`lowerBound` や `sortBy` と同じ名前も持つので、数えると `List` を使うすべての提出に配列拡張が入ります。実際に、本体まで数えた初版では `e2e/usage/abc231c`(`IntList` のみ)の出力が 29,699 から 50,928 バイトに増えました。今の規則では main(`ed5da43`)と同じ 29,699 バイトです。いずれも `./bundle -p` の出力の大きさです。
+- **標準の配列への拡張関数(`IntArray.lowerBound` など、§5.8.3)は、次の 2 つを両方満たすときだけ依存と見なします**(2026-11-10)。
+  - **関数名が利用コードの識別子にある。** 含めたライブラリのファイルの識別子は数えません。`IntList` は `lowerBound` や `sortBy` と同じ名前を持つので、数えると、配列を書くすべての `List` の提出に配列拡張が入ります。ライブラリの中で配列拡張を呼ぶのは、配列拡張の各ファイル自身だけなので、これで取りこぼしません。この前提は `SourceRulesTest.onlyTheUsersCodeCallsArrayExtensions` が、コンパイル済みのクラスのバイト列に、ほかの配列拡張のクラス名がないことで確かめます(インライン展開した場合も、デバッグ用の対応表にクラス名が残る)。`KTypeList.lowerBound` を配列拡張に処理を任せる形にすると、4 型とも検出されることを確かめました。
+  - **利用コードがその配列を持ちうる。** 配列の型名(大文字小文字を区別しない)が、利用コードの識別子(`IntArray(n)`、`intArrayOf`、`toIntArray` など)か、**利用コードが名前で呼ぶライブラリの公開関数の、宣言された戻り値の型**(`argsort(): IntArray`、`prefixSum(): LongArray` など)に現れるときです。ライブラリの本体での使用は数えません。`IntList` は要素を `IntArray` に、ソートのキーを `LongArray` に持つためです。
+  - **経緯:** 初版は両方の条件でライブラリの識別子を数えていて、`e2e/usage/abc231c`(`IntList` のみ)が 29,699 から 50,928 バイトに増えました。型名の条件だけを直した 2 版目は、`abc231c` が配列の型名を書かない形だったので直ったように見えましたが、`IntList` と `IntArray` を併用する 6 行の提出では 29,347 から 42,278 バイトに増えたままでした(ブランチのレビュー `docs/review-phase2-heaps-arrays.md` の指摘)。関数名の条件も直した今の規則では、この提出、`LongList` と `toLongArray` を併用する提出、`abc231c` のいずれも main(`ed5da43`)と同じ大きさです(29,347、29,527、29,699 バイト)。いずれも `./bundle -p` の出力の大きさです。
   - **戻り値の型を推論に任せると、この規則は見落とします。** そこで `SourceRulesTest` が、コンパイル済みのクラスの公開メソッドのうち標準の配列を返すものを、バンドラがソースから読んだ戻り値の型と、ファイル単位で突き合わせます。`argsort` の戻り値の型を外すと、4 ファイルとも検出されることを確かめました。
   - **残る穴:** 型名に一度も触れずに配列を得たとき(`IntStream.toArray()` など、標準や Java の関数から)は、拡張関数が入らずにコンパイルエラーになります。誤答にはなりません。そのときは `val a: IntArray = ...` と型を書けば入ります。
-  - **余分に入る場合:** 利用コードが `IntArray` を書き、`IntList.lowerBound` などの同名のメンバーも呼ぶと、配列に使っていなくても `IntArrayExtensions.kt` が入ります(区別できないため)。`e2e/usage/intlist-all` は 49,491 から 55,240 バイトに増えました(`ed5da43` との比較。コンパレータの移動を含む)。
+  - **余分に入る場合:** 利用コードが配列を持ちうる形で、`IntList.lowerBound` や `IntList.argsort()` などの同名の関数も呼ぶと、配列に使っていなくても `IntArrayExtensions.kt` が入ります(名前だけでは区別できないため)。`e2e/usage/intlist-all`(`intArrayOf` と `lowerBound` などを書く)は 49,491 から 55,240 バイトに、`e2e/usage/lists-other-types`(`argsort` を呼び、その戻り値が `IntArray`)は 172,880 から 179,198 バイトに増えました(`ed5da43` との比較。コンパレータの移動を含む)。
 - コンテスト用は `origin` にある最新のタグ(`v` と数字だけのもの。比較は数値で行う)からバンドルします。今のチェックアウトには依存しません。手元の実行は作業ツリーのライブラリを使うので、提出に含むファイルが手元と異なるときと、タグにない名前を使っていそうなときは警告します。後者は利用者のローカル変数と区別できないので、エラーにはしません。
 - 過去問の提出では、`--allow-unpublished` で作業ツリーからバンドルできます(§9)。
 - 生成するソースは **Kotlin 2.2 の言語機能の範囲で書きます。** ジャッジの `kotlinc 2.2.10` でコンパイルされるためです。
@@ -1038,7 +1041,8 @@ class KTypeList { /* KType を使って実装 */ }
 | メモリの目標の確認 | §15。JVM の基礎分を差し引いて、`java.util` 比 1/3 以下を満たすかを確かめる | コードテスト |
 | `Deque` の生存変異の表の x64 での確認 | 変異テストのゲートは、`Deque` を入れる前のコード(`b1c07a3`)では x64 の CI でも通った(`docs/mutation-gate.md` §5)。`Deque` の行を足した表は、まだ x64 で動いていない。PR #11 をマージした後の最初の nightly か `gh workflow run ci.yml --ref main` で通ることを確かめる。失敗したら、表にない変異が、手元と CPU が違うことによる `TIMED_OUT` と `SURVIVED` の揺れかどうかを見る | なし |
 | キーソートのファイル分割 | Int キーの `sortBy`、`sortWith`、`subList` だけの提出にも `KeySort.kt`(約 2 KB)が入る。`sortByLong` などを別ファイルに分けると減らせる。節約が小さいので急がない | なし |
-| 範囲オブジェクトを作る呼び出しの静的検出 | `AllocationTest` はブロック全体の確保量を測るので、テストコード自身の確保と区別できない。2026-11-10 に、`indexedHeapAsInDijkstra` の `for (i in 0 until 100 step 3)` が `IntRange` と `IntProgression`(計 48 バイト)を作り、JIT が消さなかった実行で失敗した(手元で 6 回中 2 回)。`while` に書き換えて直した(8 回中 0 回)。`BoxingChecker` は `valueOf` しか見ないので、ライブラリに `step` などのループが入ってもゲートでは確実に検出できない。`RangesKt.step` や `reversed` など、範囲オブジェクトを作る呼び出しも報告するよう広げると、ライブラリと `AllocationTest` のブロックの両方を JIT によらずに確かめられる。今は該当がない(`templates/` と `AllocationTest` のバイトコードで確認)ので急がない | なし |
+| 比較関数付きヒープ | §5.1 の 6 クラス(Int、Long、Double × Min / Max)と §5.5。`IntComparator` を受け取る別クラスにする。Phase 2 の範囲(§11)に入っておらず、単純ヒープとインデックス付きヒープの実装(2026-11-10)でも作っていない。既定の順序以外で並べたい場面は、今は逆順なら `Max` を使い、それ以外はキーを計算してペアヒープ(`LongIntMinHeap` など)に入れれば代用できる。キーに `-x` を入れる方法は `MIN_VALUE` で壊れるので勧めない | なし |
+| 範囲オブジェクトを作る呼び出しの静的検出 | `AllocationTest` はブロック全体の確保量を測るので、テストコード自身の確保と区別できない。2026-11-10 に、`indexedHeapAsInDijkstra` の `for (i in 0 until 100 step 3)` が `IntRange` と `IntProgression`(計 48 バイト)を作り、JIT が消さなかった実行で失敗した(手元で 6 回中 2 回)。`while` に書き換えて直した(8 回中 0 回。コミット `3e98026` のメッセージでは 13 回中 0 回で、どちらの回数が正しいかは記録から確かめられない。2026-11-10 に、`3e98026` にバンドラの変更(テストの確保には関わらない)を加えた作業ツリーで、このテストだけを 10 回流し直し、10 回とも通った)。`BoxingChecker` は `valueOf` しか見ないので、ライブラリに `step` などのループが入ってもゲートでは確実に検出できない。`RangesKt.step` や `reversed` など、範囲オブジェクトを作る呼び出しも報告するよう広げると、ライブラリと `AllocationTest` のブロックの両方を JIT によらずに確かめられる。今は該当がない(`templates/` と `AllocationTest` のバイトコードで確認)ので急がない | なし |
 | コンパイル時間とソース長の上限の調査 | 後回し(2026-11-07 に決定、理由は §15)。Phase 4 でツリーを入れるときか、実際の提出が大きくなったときに行う | コードテスト(`e2e/experiments/size-probe.py`) |
 
 ### Phase 3: ハッシュ
