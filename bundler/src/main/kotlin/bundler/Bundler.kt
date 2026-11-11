@@ -66,8 +66,8 @@ object Bundler {
      * or in the declared return type of a library function that the user's code names (`argsort`, `prefixSum`).
      * Its name, too, must appear in the user's code: the List shares the names `lowerBound` and `sortBy`, so counting
      * the library's names would bring array extensions to every List that sits next to an `IntArray`. This holds
-     * because no other library file calls an array extension, which the library's SourceRulesTest checks in the
-     * compiled classes. The library's own arrays do not count either: the List keeps its elements in an `IntArray`
+     * because no library file calls an extension on a standard array that another file declares (`toIntList` too),
+     * which the library's SourceRulesTest checks in the compiled classes. The library's own arrays do not count either: the List keeps its elements in an `IntArray`
      * and its sort keys in a `LongArray`. SourceRulesTest also checks that every public function that returns an
      * array declares it.
      * An array made with none of these, as by

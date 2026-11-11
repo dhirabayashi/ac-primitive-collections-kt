@@ -85,25 +85,64 @@ class SourceRulesTest {
         assertTrue(checked > 0, "Some method should return an array")
     }
 
-    private val arrayExtensionClass = Regex("""(?:Int|Long|Double|Char|Boolean|Byte|Short|Float)ArrayExtensionsKt""")
+    /** Each method that a class refers to, read from its constant pool: owner, name, and descriptor. */
+    private fun methodReferences(bytes: ByteArray): List<Triple<String, String, String>> {
+        val input = java.io.DataInputStream(bytes.inputStream())
+        input.skipBytes(8)
+        val count = input.readUnsignedShort()
+        val utf8 = arrayOfNulls<String>(count)
+        val pairs = IntArray(count * 2)
+        val classes = IntArray(count)
+        val methods = ArrayList<Int>()
+        var i = 1
+        while (i < count) {
+            when (val tag = input.readUnsignedByte()) {
+                1 -> utf8[i] = input.readUTF()
+                7 -> classes[i] = input.readUnsignedShort()
+                10, 11, 12 -> {
+                    pairs[2 * i] = input.readUnsignedShort()
+                    pairs[2 * i + 1] = input.readUnsignedShort()
+                    if (tag != 12) methods += i
+                }
+                3, 4, 9, 17, 18 -> input.skipBytes(4)
+                5, 6 -> input.skipBytes(8).also { i++ }
+                8, 16, 19, 20 -> input.skipBytes(2)
+                15 -> input.skipBytes(3)
+                else -> error("constant pool tag $tag")
+            }
+            i++
+        }
+        return methods.map { m ->
+            val nameAndType = pairs[2 * m + 1]
+            Triple(utf8[classes[pairs[2 * m]]]!!, utf8[pairs[2 * nameAndType]]!!, utf8[pairs[2 * nameAndType + 1]]!!)
+        }
+    }
 
     /**
-     * The bundler matches an array extension only against the user's names, not the library's (`bundler.Bundler`),
-     * so no other library class may call one: a contest submission would then fail to compile. A class that calls
-     * or inlines one names its class in the constant pool or in the inline debug map, so the bytes show it.
+     * The bundler matches an extension on a standard array only against the user's names, not the library's
+     * (`bundler.Bundler`), so no library class may call one declared in another file: a contest submission would then
+     * fail to compile, while `import` works. This covers every such extension, `IntArray.toIntList` as well as
+     * `IntArray.lowerBound`. A call, or an inlined body that calls a helper, leaves a method reference in the
+     * constant pool, so the compiled classes show it.
      */
     @Test
     fun onlyTheUsersCodeCallsArrayExtensions() {
-        val classes = File("build/classes/kotlin/main/ac_primitive_collections").listFiles { f -> f.extension == "class" }.orEmpty()
-        var facades = 0
-        val problems = classes.flatMap { file ->
-            val own = file.nameWithoutExtension.substringBefore('$')
-            if (arrayExtensionClass.matches(own)) facades++
-            val named = arrayExtensionClass.findAll(String(file.readBytes(), Charsets.ISO_8859_1)).map { it.value }.toSet()
-            (named - own).map { "${file.name} refers to $it" }
+        val parsed = sources(libraryRoots).map { bundler.SourceFile(it.name, it.readText()) }
+        val extensions = parsed.flatMap { file ->
+            val facade = "ac_primitive_collections/" + file.name.removeSuffix(".kt") + "Kt"
+            file.declarations.filter { it.receiver in bundler.Bundler.STANDARD_ARRAYS }.map { Triple(facade, it.name, "([" + jvmDescriptor(it.receiver!!)) }
         }
-        assertEquals(emptyList(), problems)
-        assertEquals(4, facades, "Each element type should have its array extensions")
+        assertTrue(extensions.map { it.first }.distinct().size >= 18, "Every file that extends an array should be found")
+        val classes = File("build/classes/kotlin/main/ac_primitive_collections").listFiles { f -> f.extension == "class" }.orEmpty()
+        val problems = classes.flatMap { file ->
+            val outer = file.nameWithoutExtension.substringBefore('$')
+            val sourceName = if (outer.endsWith("Kt")) outer.removeSuffix("Kt") + ".kt" else parsed.single { f -> f.declarations.any { it.isType && it.name == outer } }.name
+            val own = "ac_primitive_collections/" + sourceName.removeSuffix(".kt") + "Kt"
+            methodReferences(file.readBytes()).filter { (owner, name, descriptor) ->
+                owner != own && extensions.any { it.first == owner && it.second == name && descriptor.startsWith(it.third) }
+            }.map { (owner, name) -> "${file.name} calls $owner.$name" }
+        }
+        assertEquals(emptyList(), problems.distinct())
     }
 
     private fun jvmDescriptor(array: String) = when (array.removeSuffix("Array")) {
