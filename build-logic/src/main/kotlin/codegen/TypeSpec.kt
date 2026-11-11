@@ -12,6 +12,8 @@ data class TypeSpec(
 
 private fun numericSum(sumType: String, sumZero: String, toSum: String) = mapOf(
     "K_SUM_TYPE" to sumType,
+    "K_SUM_ARRAY" to "${sumType}Array",
+    "K_NEW_SUM_ARRAY" to "${sumType}Array(\$0)",
     "K_SUM_ZERO" to sumZero,
     "K_TO_SUM" to toSum,
 )

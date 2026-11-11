@@ -53,10 +53,25 @@ object Bundler {
         return BundleResult(source, ordered.map { it.name }, warnings)
     }
 
+    /** Standard array types that the library extends. Their names appear in what makes them: `IntArray(n)`, `intArrayOf`, `toIntArray`. */
+    val STANDARD_ARRAYS = listOf("Int", "Long", "Double", "Char", "Boolean", "Byte", "Short", "Float").map { it + "Array" }
+
     /**
      * Follows names to a fixed point. Names alone would pull in every element type, because `sortBy` and
      * others exist once per type. So an extension on a library type counts only once that type is included:
      * code that holds a value of the type has to reach the type's file through some name.
+     *
+     * An extension on a standard array, such as `IntArray.lowerBound`, counts only once the user's code can hold that
+     * array: once its type name appears, ignoring case, in the user's code (`IntArray(n)`, `intArrayOf`, `toIntArray`),
+     * or in the declared return type of a library function that the user's code names (`argsort`, `prefixSum`).
+     * Its name, too, must appear in the user's code: the List shares the names `lowerBound` and `sortBy`, so counting
+     * the library's names would bring array extensions to every List that sits next to an `IntArray`. This holds
+     * because no library file calls an extension on a standard array that another file declares (`toIntList` too),
+     * which the library's SourceRulesTest checks in the compiled classes. The library's own arrays do not count either: the List keeps its elements in an `IntArray`
+     * and its sort keys in a `LongArray`. SourceRulesTest also checks that every public function that returns an
+     * array declares it.
+     * An array made with none of these, as by
+     * `IntStream.toArray()`, is a compile error that names the missing function, never a wrong answer.
      */
     private fun findIncluded(main: SourceFile, library: List<SourceFile>): Set<SourceFile> {
         val typeOwners = HashMap<String, SourceFile>()
@@ -64,21 +79,30 @@ object Bundler {
             for (declaration in file.declarations) if (declaration.isType) typeOwners[declaration.name] = file
         }
         val included = LinkedHashSet<SourceFile>()
-        fun isReachable(declaration: Declaration): Boolean {
-            val receiver = declaration.receiver?.substringBefore('<')?.removeSuffix("?") ?: return true
+        val arraysSeen = HashSet<String>()
+        fun noteArrays(names: Collection<String>) {
+            for (array in STANDARD_ARRAYS) if (array !in arraysSeen && names.any { it.contains(array, ignoreCase = true) }) arraysSeen += array
+        }
+        val mentioned = HashSet(main.identifiers)
+        fun isNeeded(declaration: Declaration): Boolean {
+            val receiver = declaration.receiver?.substringBefore('<')?.removeSuffix("?") ?: return declaration.name in mentioned
+            // Only the user's code calls array extensions, so the library's names do not count for them.
+            if (receiver in STANDARD_ARRAYS) return declaration.name in main.identifiers && receiver in arraysSeen
+            if (declaration.name !in mentioned) return false
             val owner = typeOwners[receiver] ?: return true
             return owner in included
         }
-        val mentioned = HashSet(main.identifiers)
+        noteArrays(mentioned)
         var changed = true
         while (changed) {
             changed = false
             for (file in library) {
-                if (file !in included && file.declarations.any { it.name in mentioned && isReachable(it) }) {
+                if (file !in included && file.declarations.any(::isNeeded)) {
                     included += file
                     // Every name counts, members' too: a member may hand its work to a same-named extension in
                     // another file. A missing file is a compile error in a contest, an extra one only costs bytes.
                     mentioned += file.identifiers
+                    for ((name, returnType) in file.publicReturnTypes) if (name in main.identifiers) noteArrays(returnType)
                     changed = true
                 }
             }

@@ -11,7 +11,7 @@ AtCoder 用の、ボクシングしない Kotlin プリミティブコレクシ�
 ## コードの場所
 
 - `templates/`、`test-templates/`: 編集するのはここです。`generated/` を直接編集してはいけません。
-- `generated/`: 生成物をコミットします。ビルドはここから行います。生成する型は `build-logic/src/main/kotlin/codegen/Codegen.kt` の `GENERATED_TYPES` と `GENERATED_PAIRS` で決まります。今は、単一型のテンプレートが Int、Long、Double、Char、ペアのテンプレートが §5.1 の全組み合わせ(K: Int, Long, Double × V: Int, Long, Obj)です。`MinHeap` を名前に含むテンプレートからは `MaxHeap` も生成されます。名前に `VType` を含み `KTypeVType` で始まらないテンプレート(`KTypeListMapToVType`)は、異なる型の組ごとに生成されます。`templates/` は Int 版として `check` でコンパイルされます(`#if` と `#else` の両方が有効になるので、同じ宣言を両方に書けません)。`test-templates/` は展開して初めてコンパイルされます。
+- `generated/`: 生成物をコミットします。ビルドはここから行います。生成する型は `build-logic/src/main/kotlin/codegen/Codegen.kt` の `GENERATED_TYPES` と `GENERATED_PAIRS` で決まります。今は、単一型のテンプレートが Int、Long、Double、Char、ペアのテンプレートが §5.1 の全組み合わせ(K: Int, Long, Double × V: Int, Long, Obj)です。`MinHeap` を名前に含むテンプレートからは `MaxHeap` も生成され、単一型なら Int、Long、Double だけで生成されます(`HEAP_TYPES`)。名前に `VType` を含み `KTypeVType` で始まらないテンプレート(`KTypeListMapToVType`)は、異なる型の組ごとに生成されます。`templates/` は Int 版として `check` でコンパイルされます(`#if` と `#else` の両方が有効になるので、同じ宣言を両方に書けません)。`test-templates/` は展開して初めてコンパイルされます。
 - `e2e/usage/*/`: `Main.kt`、`expected.txt`、任意の `input.txt` を置くと E2E の対象になります。
 - `e2e/experiments/`: AtCoder に貼って測る比較用のコードです。
 

@@ -437,7 +437,7 @@ K はキー、V は値です。ソース上で約 100 クラスを見込みま�
 
 **単純ヒープ(`IntMinHeap`、`IntMaxHeap`)**
 
-`add`、`first`、`removeFirst`、`firstOrDefault`、`removeFirstOrDefault`、`replaceFirst`(pop + push を 1 回の sift で)、`addAll`、配列から O(n) で構築、`drainSortedTo`、`forEachUnordered`。
+`add`、`first`、`removeFirst`、`firstOrDefault`、`removeFirstOrDefault`、`replaceFirst`(pop + push を 1 回の sift で)、`addAll`、配列から O(n) で構築、`drainSortedTo`、`forEachUnordered`。実装では `drainSortedTo` を `toSortedArray` に置き換えました。実装した操作の一覧は §5.5.1 にあります。
 
 **ペアヒープ(`LongIntMinHeap`)**
 
@@ -460,6 +460,53 @@ Pair を返せないので `firstKey()` / `firstValue()` に分けます。内�
 **インデックス付きヒープ**: 添字集合 `[0, n)` に対する `set(i, key)`、`decreaseKey`、`increaseKey`、`remove(i)`、`contains(i)`、`keyOf(i)`、`firstIndex()`。
 
 **比較関数付きヒープ**: `IntComparator` を受け取る別クラスにし、Min / Max の高速経路に影響を与えません。
+
+#### 5.5.1 単純ヒープで決めたこと(2026-11-10)
+
+テンプレートは `templates/KTypeMinHeap.kt` です。Int、Long、Double の `MinHeap` と `MaxHeap` の 6 クラスを生成します(`Char` は §5.1 のとおり作らない。生成器の `HEAP_TYPES`)。内部はペアヒープと同じ 4 分ヒープです。
+
+| 分類 | 操作 |
+|---|---|
+| 要素 | `first`、`firstOrDefault`、`size`、`capacity`、`isEmpty`、`isNotEmpty` |
+| 追加 | `add`、`+=`、`addAll(IntArray / IntArray の部分範囲 / IntMinHeap)` |
+| 削除 | `removeFirst`(取り除いた値を返す)、`removeFirstOrDefault`、`replaceFirst`(取り除いた値を返す)、`clear` |
+| その他 | `ensureCapacity`、`copy`、`forEachUnordered`、`toIntArray`(順不同)、`toSortedArray`(取り出す順)、`appendTo`、`toString`、`equals`、`hashCode` |
+| 生成 | `IntMinHeap(capacity)`、`intMinHeapOf(...)`、`IntArray.toIntMinHeap()`(後の 2 つは O(n) で構築) |
+
+- **`drainSortedTo` の代わりに `toSortedArray` にしました。** 取り出す先に `IntList` を受け取ると、ヒープのファイルが `IntList` を提出に引き込みます。`toSortedArray` はヒープを変えずに、コピーを `Arrays.sort` で並べます(Max は逆順にする)。
+- **`addAll` は、加える数が今の要素数以上なら全体を作り直します(O(n))。** 少ないときは 1 つずつ上に移します。空のヒープへの `addAll` は、配列からの構築と同じ O(n) です。
+- **`toString` と `appendTo` は取り出す順に並べます(O(n log n))。** デバッグで読みやすくするためです。ペアヒープの `toString` は内部の配列の順のままです。
+- **`equals` は同じ値の多重集合かどうかで比べます。** `hashCode` は配置によらない和です。`Double` は全順序です(§4.4)。
+- **構造変更の検出はペアヒープと同じです。** 追加と削除、`replaceFirst`、`clear` が `modCount` を進め、`forEachUnordered` の中での変更は `ConcurrentModificationException` になります。何も加えない `addAll` は進めません。
+- **バンドル:** `IntMinHeap` を作って `+=` と `removeFirst` だけを呼ぶ 7 行の `Main.kt` を `./bundle -p` すると、`IntMinHeap.kt` と `Support.kt` の 2 ファイル、11,968 バイトでした(この作業のブランチで測定)。
+
+#### 5.5.2 インデックス付きヒープで決めたこと(2026-11-10)
+
+テンプレートは `templates/KTypeIndexedMinHeap.kt` です。Int、Long、Double の `IndexedMinHeap` と `IndexedMaxHeap` の 6 クラスを生成します。
+
+```kotlin
+val queue = LongIndexedMinHeap(n)
+queue[s] = 0L
+while (queue.isNotEmpty()) {
+    val d = queue.firstKey()
+    val v = queue.removeFirst()
+    // u への距離 d2 が縮んだら: dist[u] = d2; queue[u] = d2
+}
+```
+
+| 分類 | 操作 |
+|---|---|
+| 参照 | `firstIndex`、`firstKey`、`keyOf(i)`、`i in heap`、`size`、`indexCount`、`isEmpty`、`isNotEmpty` |
+| 変更 | `heap[i] = key`(追加、またはキーの変更)、`decreaseKey`、`increaseKey`、`remove(i)`(あれば `true`)、`removeFirst`(添字を返す)、`clear` |
+| その他 | `copy`、`forEachUnordered { index, key -> }`、`toString`、`equals`、`hashCode` |
+
+- **添字の数 `n` は生成時に固定です。** 3 つの配列(位置ごとの添字とキー、添字ごとの位置)を最初に確保し、伸びません。範囲外の添字は `IndexOutOfBoundsException` です。各添字は高々 1 回しか入らないので、ペアヒープと違って古い要素が残らず、要素数は `n` を超えません。キーは位置ごとの配列に持ち、比較のたびに添字を引かずに済むようにしました。
+- **`decreaseKey` と `increaseKey` は、優先度ではなくキーの値の向きで名付けています。** `MaxHeap` の `decreaseKey` は根から遠ざかる側に動かします。キーが逆向きなら `IllegalArgumentException`、添字がなければ `NoSuchElementException` です。黙ってそのまま更新すると、使い分けの誤りに気づけないためです。向きを問わずに変えるときは `heap[i] = key` を使います。
+- **`remove(i)` は最後の要素を穴に移し、上と下のどちらにも動かしうるものとして扱います。**
+- **`clear` は O(size) です。** 入っている添字の位置だけを戻します。
+- **`equals` は、`indexCount` が同じで、同じ添字に同じキーがあるかどうかで比べます。** `toString` は添字の順に `{添字=キー, ...}` と並べます(O(n))。
+- **持たないもの:** §5.2 の `toXArray`、`appendTo`、生成関数、配列からの構築。ペアヒープと同じく、形が定まらず、Dijkstra などの用途でも使わないためです。
+- **バンドル:** `LongIndexedMinHeap` を作って `set` と `removeFirst` だけを呼ぶ 7 行の `Main.kt` で、`LongIndexedMinHeap.kt` と `Support.kt` の 2 ファイル、12,683 バイトでした(同上)。
 
 ### 5.6 HashSet / HashMap
 
@@ -568,6 +615,29 @@ Kotlin には `<<` がないので、`shl` / `shr` は `Int` と同じ中置関�
 #### 5.8.2 名前の衝突検査
 
 `java.util`、`kotlin`、`kotlin.collections`、ジャッジ導入済みライブラリの公開クラスと、本ライブラリの公開名が衝突しないことを CI で検査します。
+
+#### 5.8.3 配列拡張で決めたこと(2026-11-10)
+
+テンプレートは `templates/KTypeArrayExtensions.kt` です。Int、Long、Double、Char の 4 ファイルを生成します。`List` の同名の操作とは別のコードにしました。片方を使う提出に、もう片方が入らないようにするためです。
+
+| 操作 | 内容 |
+|---|---|
+| `lowerBound`、`upperBound`(範囲引数つきもあり) | ソート済みの配列が前提。`List` と同じ |
+| `argsort`、`argsortBy`、`argsortByLong`、`argsortByDouble` | 安定。添字の `IntArray` を返す |
+| `sortBy`、`sortByLong`、`sortByDouble` | 安定。比較関数なし |
+| `sortWith(IntComparator)`、`sortWith(comparator, from, to)` | 安定なマージソート |
+| `dedupe()` | 隣り合う重複を詰め、残った個数を返す |
+| `compress()` | 座標圧縮。各要素の順位(0 から)を新しい `IntArray` で返す |
+| `nextPermutation()` | `List` と同じ |
+| `prefixSum()` | 長さ `size + 1` の累積和。`Int` と `Long` は `LongArray`、`Double` は `DoubleArray`。`Char` にはない |
+
+- **`dedupe` は個数を返します。** 配列は縮められないので、その場で詰めて `val m = a.dedupe()` とし、`a[0 until m]` を使います。`List.dedupe` は `Unit` を返すので形が違いますが、取り違えても `Int` と `Unit` の違いでコンパイルエラーになります。
+- **`compress` は順位だけを返します。** 順位から値に戻すには、コピーを `sort` して `dedupe` し、`sorted[rank]` で引きます。`Pair` を返すとボクシングと確保が増えるので、両方を返す形にはしませんでした。
+- **`Double` は全順序です(§4.4)。** 標準の `DoubleArray.sort()` と同じ順なので、`sort` した配列にそのまま `lowerBound` を使えます。
+- **`IntComparator` などの比較関数とマージソートを、`KTypeListSort.kt` から `templates/KTypeComparator.kt` に移しました。** 配列の `sortWith` が `IntList` を提出に引き込まないためです。`List` のソートを使う提出には `IntComparator.kt` が増えますが、中身は移しただけなので、大きさはほぼ変わりません。
+- **標準ライブラリにあるものは作りません。** `sort`、`sortDescending`、`reverse`、`shuffle`、`binarySearch`、`fill`、`copyOf` などです。
+- **バンドル:** `IntArray` を `sort` して `lowerBound` を呼ぶだけの 7 行の `Main.kt` で、`IntArrayExtensions.kt`、`IntComparator.kt`、`KeySort.kt`、`Support.kt` の 4 ファイル、14,530 バイトでした(同上)。配列拡張の依存はファイル単位なので、`lowerBound` だけを使っても、`sortWith` と `argsortBy` の依存先が入ります。
+- **貼り付けでの衝突:** 利用者が自分の `IntArray.lowerBound` を定義していると、貼り付けではコンパイルエラーになります(§8.3)。バンドラが検出して改名を求めます。
 
 ---
 
@@ -744,6 +814,13 @@ JUnit 5 + kotlin-test を使います。操作列の実行器は自作して依�
 - 手元では `import` で開発し、バンドラの出力を提出します。両方の動作の一致を E2E で確認します。
 - **依存は余分に含める側に倒します。** 取りこぼすとコンテスト中に CE になりますが、余分なファイルはサイズが増えるだけだからです。含めたファイルの識別子は、メンバーの名前も含めてすべて依存の候補にします(メンバーが同名の拡張関数に処理を任せることがあるため。除外していたときと比べて、`List` を使う提出が約 1.3 KB 増える)。そのため、`IntList.mapToDouble` と `DoubleList.argsort()` だけの提出にも、`IntListSort.kt` が入ります。
 - ライブラリの型への拡張関数は、その型のファイルが含まれているときだけ、名前の一致を依存と見なします。`sortBy` などは型ごとにあるので、名前だけで解決すると、1 つの型を使う提出に 4 型すべてが入るためです。ある型の値を持つコードは、どこかでその型の名前に到達するので、必要なものは漏れません。
+- **標準の配列への拡張関数(`IntArray.lowerBound` など、§5.8.3)は、次の 2 つを両方満たすときだけ依存と見なします**(2026-11-10)。
+  - **関数名が利用コードの識別子にある。** 含めたライブラリのファイルの識別子は数えません。`IntList` は `lowerBound` や `sortBy` と同じ名前を持つので、数えると、配列を書くすべての `List` の提出に配列拡張が入ります。この規則は、配列拡張に限らず、標準の配列を受け取る拡張関数すべて(宣言するファイルは 18。`IntArray.toIntList()` や `toIntMinHeap()` も含む)に効きます。ライブラリの中でこれらを呼ぶのは、宣言している各ファイル自身だけなので、これで取りこぼしません。この前提は `SourceRulesTest.onlyTheUsersCodeCallsArrayExtensions` が確かめます。ソースから標準の配列を受け取る宣言をすべて集め、コンパイル済みの各クラスの定数プールに、ほかのファイルのそれらへのメソッド参照がないことを調べます(インライン展開した場合も、展開した本体が呼ぶ補助関数への参照が残る)。`IntDeque.kt` に `IntArray.toIntList()` の呼び出しと `IntArray.sortBy` を一時的に足すと、`toIntList` と `permute` への参照として検出されることを確かめました(2026-11-11)。当初のテストはクラス名 `*ArrayExtensionsKt` だけを調べていて、規則より狭かった。
+  - **利用コードがその配列を持ちうる。** 配列の型名(大文字小文字を区別しない)が、利用コードの識別子(`IntArray(n)`、`intArrayOf`、`toIntArray` など)か、**利用コードが名前で呼ぶライブラリの公開関数の、宣言された戻り値の型**(`argsort(): IntArray`、`prefixSum(): LongArray` など)に現れるときです。ライブラリの本体での使用は数えません。`IntList` は要素を `IntArray` に、ソートのキーを `LongArray` に持つためです。
+  - **経緯:** 初版は両方の条件でライブラリの識別子を数えていて、`e2e/usage/abc231c`(`IntList` のみ)が 29,699 から 50,928 バイトに増えました。型名の条件だけを直した 2 版目は、`abc231c` が配列の型名を書かない形だったので直ったように見えましたが、`IntList` と `IntArray` を併用する 6 行の提出では 29,347 から 42,278 バイトに増えたままでした。関数名の条件も直した今の規則では、この提出、`LongList` と `toLongArray` を併用する提出、`abc231c` のいずれも main(`ed5da43`)と同じ大きさです(29,347、29,527、29,699 バイト)。いずれも `./bundle -p` の出力の大きさです。
+  - **戻り値の型を推論に任せると、この規則は見落とします。** そこで `SourceRulesTest` が、コンパイル済みのクラスの公開メソッドのうち標準の配列を返すものを、バンドラがソースから読んだ戻り値の型と、ファイル単位で突き合わせます。`argsort` の戻り値の型を外すと、4 ファイルとも検出されることを確かめました。
+  - **残る穴:** 型名に一度も触れずに配列を得たとき(`IntStream.toArray()` など、標準や Java の関数から)は、拡張関数が入らずにコンパイルエラーになります。誤答にはなりません。そのときは `val a: IntArray = ...` と型を書けば入ります。
+  - **余分に入る場合:** 利用コードが配列を持ちうる形で、`IntList.lowerBound` や `IntList.argsort()` などの同名の関数も呼ぶと、配列に使っていなくても `IntArrayExtensions.kt` が入ります(名前だけでは区別できないため)。`e2e/usage/intlist-all`(`intArrayOf` と `lowerBound` などを書く)は 49,491 から 55,240 バイトに、`e2e/usage/lists-other-types`(`argsort` を呼び、その戻り値が `IntArray`)は 172,880 から 179,198 バイトに増えました(`ed5da43` との比較。コンパレータの移動を含む)。
 - コンテスト用は `origin` にある最新のタグ(`v` と数字だけのもの。比較は数値で行う)からバンドルします。今のチェックアウトには依存しません。手元の実行は作業ツリーのライブラリを使うので、提出に含むファイルが手元と異なるときと、タグにない名前を使っていそうなときは警告します。後者は利用者のローカル変数と区別できないので、エラーにはしません。
 - 過去問の提出では、`--allow-unpublished` で作業ツリーからバンドルできます(§9)。
 - 生成するソースは **Kotlin 2.2 の言語機能の範囲で書きます。** ジャッジの `kotlinc 2.2.10` でコンパイルされるためです。
@@ -948,8 +1025,8 @@ class KTypeList { /* KType を使って実装 */ }
 | 他の型の組み合わせと `Max` のペアヒープ | 完了。§5.1 の 18 クラスを 1 つのテンプレートから生成し、全ゲートを通過(分岐カバレッジ 100%、変異テスト 91%)、E2E 通過。AtCoder への提出は判断が変わらないので行っていない |
 | 全型の `List` | 完了。Int、Long、Double、Char の `List`、`SubList`、変換、ソートと、型変換 12 ファイルを生成し、全ゲートを通過(分岐カバレッジ 100%、変異テスト 93%)、E2E 通過。決めたことは §5.3.3。テンプレートは Int 版として `check` でコンパイルされる(§11)。実際の問題での提出は、判断が変わらないので行っていない |
 | 変異テストのゲートの見直し | 完了(2026-11-08)。検出率の閾値をやめ、確認済みの生存変異との差分をゲートにした(§7.1、`docs/mutation-gate.md`)。x64 の CI の nightly でも通過した(`b1c07a3`) |
-| 全型の `Deque` | 完了(2026-11-08)。Int、Long、Double、Char の `Deque` と変換を生成し、全ゲートを通過(分岐カバレッジ 100%、変異テストは確認済みの生存変異の表に収まる)。決めたことは §5.4.1。E2E の `e2e/usage/deque-all` に、BFS と 0-1 BFS を入れた。AtCoder への提出は、判断が変わらないので行っていない |
-| 単純ヒープ、インデックス付きヒープ、配列拡張 | **未実施** |
+| 全型の `Deque` | 完了(2026-11-08)。Int、Long、Double、Char の `Deque` と変換を生成し、全ゲートを通過(分岐カバレッジ 100%、変異テストは確認済みの生存変異の表に収まる)。決めたことは §5.4.1。E2E の `e2e/usage/deque-all` に、BFS と 0-1 BFS を入れた。AtCoder への提出は、判断が変わらないので行っていない。変異テストのゲートは、マージ後の `ed5da43` で x64 の CI の nightly でも通過した |
+| 単純ヒープ、インデックス付きヒープ、配列拡張 | 完了(2026-11-10)。Int、Long、Double の `MinHeap` と `MaxHeap` 6 クラス、`IndexedMinHeap` と `IndexedMaxHeap` 6 クラス、4 型の配列拡張を生成し、全ゲートを通過(分岐カバレッジ 100%、変異テストは確認済みの生存変異の表に収まる)。決めたことは §5.5.1、§5.5.2、§5.8.3。配列拡張が `List` を使う提出に入らないように、バンドラの規則を足した(§8.2)。E2E の `e2e/usage/heaps-all`(インデックス付きヒープの Dijkstra を含む)と `e2e/usage/array-extensions` を足した。AtCoder への提出は、判断が変わらないので行っていない。変異テストのゲートは x64 の CI の nightly でも通過した(`ca6cbeb`、`docs/mutation-gate.md` §5) |
 | ソートの実測と採否(§6)、argsort の代表問題 | **未実施** |
 
 **積んである作業**
@@ -959,12 +1036,12 @@ class KTypeList { /* KType を使って実装 */ }
 | 作業 | 内容 | 手作業 |
 |---|---|---|
 | `nextCapacity` の拡張率の決定 | 暫定で 1.5 倍のまま | コードテスト(`e2e/experiments/GrowthRate.kt`) |
-| 単純ヒープ、インデックス付きヒープ、配列拡張 | §5.5、§5.8 | なし |
 | ソートの採否と argsort の代表問題 | §6。Phase 2 の完了条件。`Long`、`Double` の `argsort` と `sortByLong` などの既定である基数ソートも測る。基数ソートは測らずに `v0.3.0` に入れた(2026-11-08 に所有者が決定。`v0.2.0` には `Long`、`Double` の `argsort` がなく、悪くなるものがないため) | 提出 |
 | 標準と同じ書き方の不足 | `sumOf` は `Long` のセレクタだけなので、`doubles.sumOf { it * 2.0 }` はコンパイルエラーになる(`sumOfDouble` なら `sortByDouble` と揃う)。`String` から `CharList` を直接作れず、`s.toCharArray().toCharList()` と 2 回コピーする。どちらもコンパイルエラーか小さな無駄で、誤答や黙ったボクシングにはならないので、必要になったら足す | なし |
 | メモリの目標の確認 | §15。JVM の基礎分を差し引いて、`java.util` 比 1/3 以下を満たすかを確かめる | コードテスト |
-| `Deque` の生存変異の表の x64 での確認 | 変異テストのゲートは、`Deque` を入れる前のコード(`b1c07a3`)では x64 の CI でも通った(`docs/mutation-gate.md` §5)。`Deque` の行を足した表は、まだ x64 で動いていない。PR #11 をマージした後の最初の nightly か `gh workflow run ci.yml --ref main` で通ることを確かめる。失敗したら、表にない変異が、手元と CPU が違うことによる `TIMED_OUT` と `SURVIVED` の揺れかどうかを見る | なし |
 | キーソートのファイル分割 | Int キーの `sortBy`、`sortWith`、`subList` だけの提出にも `KeySort.kt`(約 2 KB)が入る。`sortByLong` などを別ファイルに分けると減らせる。節約が小さいので急がない | なし |
+| 比較関数付きヒープ | §5.1 の 6 クラス(Int、Long、Double × Min / Max)と §5.5。`IntComparator` を受け取る別クラスにする。Phase 2 の範囲(§11)に入っておらず、単純ヒープとインデックス付きヒープの実装(2026-11-10)でも作っていない。既定の順序以外で並べたい場面は、今は逆順なら `Max` を使い、それ以外はキーを計算してペアヒープ(`LongIntMinHeap` など)に入れれば代用できる。キーに `-x` を入れる方法は `MIN_VALUE` で壊れるので勧めない | なし |
+| 範囲オブジェクトを作る呼び出しの静的検出 | `AllocationTest` はブロック全体の確保量を測るので、テストコード自身の確保と区別できない。2026-11-10 に、`indexedHeapAsInDijkstra` の `for (i in 0 until 100 step 3)` が `IntRange` と `IntProgression`(計 48 バイト)を作り、JIT が消さなかった実行で失敗した(手元で 6 回中 2 回)。`while` に書き換えて直した(8 回中 0 回。コミット `3e98026` のメッセージでは 13 回中 0 回で、どちらの回数が正しいかは記録から確かめられない。2026-11-10 に、`3e98026` にバンドラの変更(テストの確保には関わらない)を加えた作業ツリーで、このテストだけを 10 回流し直し、10 回とも通った)。`BoxingChecker` は `valueOf` しか見ないので、ライブラリに `step` などのループが入ってもゲートでは確実に検出できない。`RangesKt.step` や `reversed` など、範囲オブジェクトを作る呼び出しも報告するよう広げると、ライブラリと `AllocationTest` のブロックの両方を JIT によらずに確かめられる。今は該当がない(`templates/` と `AllocationTest` のバイトコードで確認)ので急がない | なし |
 | コンパイル時間とソース長の上限の調査 | 後回し(2026-11-07 に決定、理由は §15)。Phase 4 でツリーを入れるときか、実際の提出が大きくなったときに行う | コードテスト(`e2e/experiments/size-probe.py`) |
 
 ### Phase 3: ハッシュ

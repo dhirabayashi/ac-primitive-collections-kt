@@ -55,6 +55,107 @@ class SourceRulesTest {
         assertEquals(emptyList(), clashes)
     }
 
+    /**
+     * The bundler brings array extensions for an array that a called library function returns, and finds those
+     * from the declared return types in the source (`bundler.Bundler`). An inferred one would be missed, and a
+     * contest submission would then fail to compile. So every public method that returns a standard array must
+     * declare it in the source.
+     */
+    @Test
+    fun functionsThatReturnArraysDeclareItForTheBundler() {
+        val parsed = sources(libraryRoots).associate { it.name to bundler.SourceFile(it.name, it.readText()) }
+        val arrays = bundler.Bundler.STANDARD_ARRAYS.associateBy { Class.forName("[" + jvmDescriptor(it)) }
+        val classes = File("build/classes/kotlin/main/ac_primitive_collections").listFiles { f -> f.extension == "class" }.orEmpty()
+        var checked = 0
+        val missing = classes.flatMap { file ->
+            val type = Class.forName("ac_primitive_collections." + file.nameWithoutExtension)
+            if (!java.lang.reflect.Modifier.isPublic(type.modifiers)) return@flatMap emptyList()
+            // Top-level functions live in the facade class `<File>Kt`, and a class in the file that declares it.
+            val outer = type.name.substringAfterLast('.').substringBefore('$')
+            val source = parsed[outer.removeSuffix("Kt") + ".kt"]?.takeIf { outer.endsWith("Kt") }
+                ?: parsed.values.single { f -> f.declarations.any { it.isType && it.name == outer } }
+            val internal = source.declarations.filter { it.visibility != bundler.Declaration.Visibility.PUBLIC }.map { it.name }.toSet()
+            type.declaredMethods.filter { java.lang.reflect.Modifier.isPublic(it.modifiers) && it.returnType in arrays && it.name !in internal }.mapNotNull { method ->
+                checked++
+                val array = arrays.getValue(method.returnType)
+                if (array in source.publicReturnTypes[method.name].orEmpty()) null else "${source.name}: ${method.name} returns $array"
+            }
+        }
+        assertEquals(emptyList(), missing.distinct())
+        assertTrue(checked > 0, "Some method should return an array")
+    }
+
+    /** Each method that a class refers to, read from its constant pool: owner, name, and descriptor. */
+    private fun methodReferences(bytes: ByteArray): List<Triple<String, String, String>> {
+        val input = java.io.DataInputStream(bytes.inputStream())
+        input.skipBytes(8)
+        val count = input.readUnsignedShort()
+        val utf8 = arrayOfNulls<String>(count)
+        val pairs = IntArray(count * 2)
+        val classes = IntArray(count)
+        val methods = ArrayList<Int>()
+        var i = 1
+        while (i < count) {
+            when (val tag = input.readUnsignedByte()) {
+                1 -> utf8[i] = input.readUTF()
+                7 -> classes[i] = input.readUnsignedShort()
+                10, 11, 12 -> {
+                    pairs[2 * i] = input.readUnsignedShort()
+                    pairs[2 * i + 1] = input.readUnsignedShort()
+                    if (tag != 12) methods += i
+                }
+                3, 4, 9, 17, 18 -> input.skipBytes(4)
+                5, 6 -> input.skipBytes(8).also { i++ }
+                8, 16, 19, 20 -> input.skipBytes(2)
+                15 -> input.skipBytes(3)
+                else -> error("constant pool tag $tag")
+            }
+            i++
+        }
+        return methods.map { m ->
+            val nameAndType = pairs[2 * m + 1]
+            Triple(utf8[classes[pairs[2 * m]]]!!, utf8[pairs[2 * nameAndType]]!!, utf8[pairs[2 * nameAndType + 1]]!!)
+        }
+    }
+
+    /**
+     * The bundler matches an extension on a standard array only against the user's names, not the library's
+     * (`bundler.Bundler`), so no library class may call one declared in another file: a contest submission would then
+     * fail to compile, while `import` works. This covers every such extension, `IntArray.toIntList` as well as
+     * `IntArray.lowerBound`. A call, or an inlined body that calls a helper, leaves a method reference in the
+     * constant pool, so the compiled classes show it.
+     */
+    @Test
+    fun onlyTheUsersCodeCallsArrayExtensions() {
+        val parsed = sources(libraryRoots).map { bundler.SourceFile(it.name, it.readText()) }
+        val extensions = parsed.flatMap { file ->
+            val facade = "ac_primitive_collections/" + file.name.removeSuffix(".kt") + "Kt"
+            file.declarations.filter { it.receiver in bundler.Bundler.STANDARD_ARRAYS }.map { Triple(facade, it.name, "([" + jvmDescriptor(it.receiver!!)) }
+        }
+        assertTrue(extensions.map { it.first }.distinct().size >= 18, "Every file that extends an array should be found")
+        val classes = File("build/classes/kotlin/main/ac_primitive_collections").listFiles { f -> f.extension == "class" }.orEmpty()
+        val problems = classes.flatMap { file ->
+            val outer = file.nameWithoutExtension.substringBefore('$')
+            val sourceName = if (outer.endsWith("Kt")) outer.removeSuffix("Kt") + ".kt" else parsed.single { f -> f.declarations.any { it.isType && it.name == outer } }.name
+            val own = "ac_primitive_collections/" + sourceName.removeSuffix(".kt") + "Kt"
+            methodReferences(file.readBytes()).filter { (owner, name, descriptor) ->
+                owner != own && extensions.any { it.first == owner && it.second == name && descriptor.startsWith(it.third) }
+            }.map { (owner, name) -> "${file.name} calls $owner.$name" }
+        }
+        assertEquals(emptyList(), problems.distinct())
+    }
+
+    private fun jvmDescriptor(array: String) = when (array.removeSuffix("Array")) {
+        "Int" -> "I"
+        "Long" -> "J"
+        "Double" -> "D"
+        "Char" -> "C"
+        "Boolean" -> "Z"
+        "Byte" -> "B"
+        "Short" -> "S"
+        else -> "F"
+    }
+
     private val iterableOfProgressionType = Regex("""Iterable<(Int|Long|Char)>""")
 
     /**

@@ -2,7 +2,28 @@
 
 `./gradlew pitest` で生存した変異を 1 件ずつ確認した記録です(§7.1)。
 
-## 結果(最新: 4 型の `List`、`SubList`、型変換、`Deque`、ペアヒープ 18 クラス)
+## 結果(最新: 単純ヒープ 6 クラス、インデックス付きヒープ 6 クラス、配列拡張 4 ファイルを追加)
+
+2026-11-10 に、単純ヒープ(`KTypeMinHeap.kt`)、インデックス付きヒープ(`KTypeIndexedMinHeap.kt`)、配列拡張(`KTypeArrayExtensions.kt`)を加えて実行した結果です(テストを足した後の 2 回目の実行)。
+
+1 回目の実行で表にない生存変異を確認し、次の 5 件はテストの不足だったので、テストを足して検出しています。
+
+- `dedupe` の `n < 2` を `<= 2` にする変異: 2 要素で等しい配列(`[7, 7]`)のテストがなく、2 を返す誤りを見逃していた
+- 単純ヒープの `addAll` の範囲検査を消す変異、インデックス付きヒープの `checkIndex` の境界の変異: 代わりに `arraycopy` や配列の参照が投げる `ArrayIndexOutOfBoundsException` は `IndexOutOfBoundsException` の子クラスなので、`assertFailsWith` が通っていた。例外のクラスが `IndexOutOfBoundsException` そのものであることも確かめるようにした
+- 単純ヒープの `addAll(heap)` の容量の境界: ちょうど収まるときに伸ばさないことを確かめていなかった
+- インデックス付きヒープの `clear` の境界: 満杯のヒープを `clear` するテストがなかった(満杯のときは範囲外を読む)
+
+残りはすべて等価だと確認し、「確認済みの生存変異」の表に足しました。1 クラスあたりの生存変異は、単純ヒープが 14 件(`Max` は逆順の交換の 1 件を足して 15 件)、インデックス付きヒープが 10 件、配列拡張が 1 件で、型による違いはありません。`KTypeListSort.kt` から `KTypeComparator.kt` に移したマージソートの生存変異は、移す前と同じ 3 行の範囲です(`Int`、`Double`、`Char` は 7 件、`Long` は 6 件。`build/reports/pitest/mutations.xml` を集計して確認)。
+
+| 状態 | 件数 |
+|---|---|
+| KILLED | 5703 |
+| TIMED_OUT(検出扱い) | 224 |
+| MEMORY_ERROR(検出扱い) | 4 |
+| SURVIVED | 474 |
+| スコア | 92.60%(参考値。ゲートには使わない) |
+
+### 単純ヒープ、インデックス付きヒープ、配列拡張を加える前の実行(4 型の `List`、`SubList`、型変換、`Deque`、ペアヒープ 18 クラス)
 
 2026-11-08 に、`Deque` 4 型と変換 4 ファイルを加えて実行した結果です(テストを足した後の 2 回目の実行)。`Deque` の生存変異は、`IntDeque` などの本体が 4 型とも同じ 14 件、`Conversions` が 2 件です(`Double` には範囲の変換がない)。1 回目の実行では `Conversions` が 3 件で、1 要素の昇順の範囲(`7..7`)を `addAll` するテストがなかったために、`first <= last` の境界の変異が生き残っていました。テストを足して検出しています。残りはすべて等価だと確認し、「確認済みの生存変異」の表に足しました。それ以外のクラスの生存変異は、表の範囲に収まっています(`pitestBaseline` で確認)。
 
@@ -58,9 +79,9 @@
 | `KTypeList.kt` | `shuffle` | `ConditionalsBoundaryMutator` | `changed conditional boundary` | 1 | `i > from` を `>=` に(346 行) | 乱数の消費が 1 回増えるだけで、交換は自分自身と。分布は変わらない |
 | `KTypeListConversions.kt` | `addAll` | `ConditionalsBoundaryMutator` | `changed conditional boundary` | 2 | コンパイラが生成する `step > 0` を `>= 0` に、`step < 0` を `<= 0` に(44 行) | プログレッションの `step` は 0 にならないので等価 |
 | `KTypeSubList.kt` | `binarySearch` | `ConditionalsBoundaryMutator` | `changed conditional boundary` | 1 | `found >= 0` を `>` に(80 行) | `found == 0` は `offset == 0` のときだけで、両方の式が 0 になる |
-| `KTypeListSort.kt` | `mergeSortKType` | `MathMutator` | `Replaced integer subtraction with addition` | 1 | `to - from` を `to + from` に(77 行) | `n` は作業領域の大きさと打ち切りの判定にのみ使う。実際の添字は `to` で制限されるので結果は同じ(余分な確保のみ) |
-| `KTypeListSort.kt` | `mergeSortKType` | `ConditionalsBoundaryMutator` | `changed conditional boundary` | 5 | 挿入ソートとマージの境界(80、85、96 行)、作業領域の計算の境界(89 行)、打ち切りの境界(101 行) | 挿入ソートとマージはラン長が 1 違うだけで結果は同じ。作業領域は大きくなるだけ。打ち切りは何もしないパスが 1 回増えるだけ |
-| `KTypeListSort.kt` | `mergeKType` | `ConditionalsBoundaryMutator` | `changed conditional boundary` | 1 | `<= 0` を `< 0` に(マージ省略の判定、121 行) | 省略しなくても安定マージの結果は同じ |
+| `KTypeComparator.kt` | `mergeSortKType` | `MathMutator` | `Replaced integer subtraction with addition` | 1 | `to - from` を `to + from` に(77 行) | `n` は作業領域の大きさと打ち切りの判定にのみ使う。実際の添字は `to` で制限されるので結果は同じ(余分な確保のみ) |
+| `KTypeComparator.kt` | `mergeSortKType` | `ConditionalsBoundaryMutator` | `changed conditional boundary` | 5 | 挿入ソートとマージの境界(80、85、96 行)、作業領域の計算の境界(89 行)、打ち切りの境界(101 行) | 挿入ソートとマージはラン長が 1 違うだけで結果は同じ。作業領域は大きくなるだけ。打ち切りは何もしないパスが 1 回増えるだけ |
+| `KTypeComparator.kt` | `mergeKType` | `ConditionalsBoundaryMutator` | `changed conditional boundary` | 1 | `<= 0` を `< 0` に(マージ省略の判定、121 行) | 省略しなくても安定マージの結果は同じ |
 | `KTypeDeque.kt` | `addFirst`、`addLast`、`finishAdd`、`removeFirst`、`removeLast`、`removeAt`、`clear`、`minusAssign` | `MathMutator` | `Replaced integer addition with subtraction` | 1 | `modCount++` を `modCount--` に(75、83、127、135、143、169、183、317 行) | `KTypeList` と同じく、`modCount` は変化の有無だけを比較するので等価 |
 | `KTypeDeque.kt` | `removeAt` | `ConditionalsBoundaryMutator` | `changed conditional boundary` | 2 | 前を詰めるループの `i > 0` を `>= 0` に(156 行)、後ろを詰めるループの `i < length - 1` を `<=` に(163 行) | 1 回多い代入は、削除後に要素の範囲の外になる位置(先頭の 1 つ前、末尾の 1 つ後)にだけ書く |
 | `KTypeDeque.kt` | `rotate` | `ConditionalsBoundaryMutator` | `changed conditional boundary` | 1 | 回す向きを選ぶ `right <= n - right` を `<` に(212 行) | 右に `d` 回と左に `size - d` 回は同じ結果になる。変わるのは動かす回数だけ |
@@ -73,3 +94,17 @@
 | `KTypeVTypeMinHeap.kt` | `removeFirst` | `ConditionalsBoundaryMutator` | `changed conditional boundary` | 1 | `last > 0` を `>= 0` に | 空になるときの `siftDown` は、先頭に自分自身を書き戻すだけ。`Obj` ではその後に同じ位置を `null` にする |
 | `KTypeVTypeMinHeap.kt` | `siftUp` | `ConditionalsBoundaryMutator` | `changed conditional boundary` | 1 | 比較の `<` を `<=` に | 等しいキーの間の順序だけが変わる。この順序は不定と定めている。`Double` の等しさは全順序で判定する |
 | `KTypeVTypeMinHeap.kt` | `siftDown` | `ConditionalsBoundaryMutator` | `changed conditional boundary` | 3 | 比較の `<` を `<=` に(2 件)、子の範囲の `>` を `>=` に(1 件) | 比較は `siftUp` と同じ理由。子の範囲は、ちょうど 4 個のときはどちらの式も同じ値になる |
+| `KTypeMinHeap.kt` | `add`、`removeRoot`、`replaceFirst`、`clear`、`settleAppended` | `MathMutator` | `Replaced integer addition with subtraction` | 1 | `modCount++` を `modCount--` に(51、108、117、123、94 行) | `KTypeList` と同じく、`modCount` は変化の有無だけを比較するので等価 |
+| `KTypeMinHeap.kt` | `add` | `MathMutator` | `Replaced long addition with subtraction` | 1 | `n + 1L` を `n - 1L` に(48 行) | `KTypeList` の `add` と同じ理由で結果が同じ |
+| `KTypeMinHeap.kt` | `settleAppended` | `ConditionalsBoundaryMutator` | `changed conditional boundary` | 1 | 作り直すかの判定 `end - old >= old` の `>=` を `>` に(85 行) | 作り直しと 1 つずつ上に移す方法のどちらでも正しいヒープになる。変わるのは計算量だけ |
+| `KTypeMinHeap.kt` | `settleAppended` | `NegateConditionalsMutator` | `negated conditional` | 1 | 同じ判定の否定(85 行) | 上と同じ理由 |
+| `KTypeMinHeap.kt` | `settleAppended` | `MathMutator` | `Replaced integer subtraction with addition` | 1 | `end - old` を `end + old` に(85 行) | 常に作り直すことになるだけで、結果は同じ |
+| `KTypeMinHeap.kt` | `removeRoot` | `ConditionalsBoundaryMutator` | `changed conditional boundary` | 1 | `last > 0` を `>= 0` に(107 行) | 空になるときの `siftDown` は、先頭に自分自身を書き戻すだけ |
+| `KTypeMinHeap.kt` | `siftUp` | `ConditionalsBoundaryMutator` | `changed conditional boundary` | 1 | 比較の `<` を `<=` に(208 行) | 等しい値の間の順序だけが変わる。等しい値は区別できない(`Double` は全順序で等しいもの) |
+| `KTypeMinHeap.kt` | `siftDown` | `ConditionalsBoundaryMutator` | `changed conditional boundary` | 3 | 比較の `<` を `<=` に(228、231 行)、子の範囲の `>` を `>=` に(224 行) | 比較は `siftUp` と同じ理由。子の範囲は、ちょうど 4 個のときはどちらの式も同じ値になる |
+| `KTypeMinHeap.kt` | `toSortedArray` | `ConditionalsBoundaryMutator` | `changed conditional boundary` | 1 | `Max` だけにある逆順の `i < j` を `<=` に(`IntMaxHeap.kt` の 155 行) | 中央の要素を自分自身と交換するだけ |
+| `KTypeIndexedMinHeap.kt` | `set`、`decreaseKey`、`increaseKey`、`removeAt`、`clear` | `MathMutator` | `Replaced integer addition with subtraction` | 1 | `modCount++` を `modCount--` に(79、87、95、205、122 行) | `KTypeList` と同じく、`modCount` は変化の有無だけを比較するので等価 |
+| `KTypeIndexedMinHeap.kt` | `changeKey` | `ConditionalsBoundaryMutator` | `changed conditional boundary` | 1 | `<` を `<=` に(195 行) | 同じキーへの変更で、`siftDown` の代わりに `siftUp` を呼ぶ。どちらも動かさない |
+| `KTypeIndexedMinHeap.kt` | `siftUp` | `ConditionalsBoundaryMutator` | `changed conditional boundary` | 1 | 比較の `<` を `<=` に(216 行) | 等しいキーの間の順序だけが変わる。この順序は不定と定めている |
+| `KTypeIndexedMinHeap.kt` | `siftDown` | `ConditionalsBoundaryMutator` | `changed conditional boundary` | 3 | 比較の `<` を `<=` に(242、245 行)、子の範囲の `>` を `>=` に(238 行) | `KTypeVTypeMinHeap.kt` の `siftDown` と同じ理由 |
+| `KTypeArrayExtensions.kt` | `nextPermutation` | `ConditionalsBoundaryMutator` | `changed conditional boundary` | 1 | 末尾の反転の `lo < hi` を `<=` に(154 行) | 中央の要素を自分自身と交換するだけ |

@@ -8,6 +8,9 @@ object Codegen {
     /** Element types of single-type templates, from docs/PLAN.md section 5.1. */
     val GENERATED_TYPES = listOf("Int", "Long", "Double", "Char")
 
+    /** Element types of single-type heap templates. Section 5.1 leaves out Char: an IntMinHeap of codes does the job. */
+    val HEAP_TYPES = GENERATED_TYPES - "Char"
+
     /**
      * Key and value types of pair templates, from docs/PLAN.md section 5.1.
      * These are the pair heaps' combinations. Other collections need their own: see Phase 3 in that document.
@@ -65,7 +68,7 @@ object Codegen {
                     }
                     continue
                 }
-                for (typeName in GENERATED_TYPES) {
+                for (typeName in if (MIN_HEAP in template.name) HEAP_TYPES else GENERATED_TYPES) {
                     val spec = TYPE_SPECS.getValue(typeName)
                     val name = fileName.replace(TEMPLATE_PREFIX, spec.name)
                     result["ac_primitive_collections/$name"] = header(label) + TemplateEngine.expand(body, spec, maxHeap = maxHeap)

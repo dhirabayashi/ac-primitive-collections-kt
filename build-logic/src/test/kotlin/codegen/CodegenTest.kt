@@ -19,10 +19,15 @@ class CodegenTest {
 
     private val elementTypes = listOf("Int", "Long", "Double", "Char")
     private val conversions = elementTypes.flatMap { source -> (elementTypes - source).map { "${source}ListMapTo$it" } }
-    private val lists = elementTypes.flatMap { listOf("${it}List", "${it}ListConversions", "${it}ListSort", "${it}SubList") }
+    private val lists = elementTypes.flatMap { listOf("${it}List", "${it}ListConversions", "${it}ListSort", "${it}SubList", "${it}Comparator") }
     private val listTests = elementTypes.flatMap { listOf("${it}ListDifferentialTest", "${it}ListTest", "${it}SubListTest") }
     private val deques = elementTypes.flatMap { listOf("${it}Deque", "${it}DequeConversions") }
     private val dequeTests = elementTypes.flatMap { listOf("${it}DequeDifferentialTest", "${it}DequeTest") }
+    private val arrays = elementTypes.map { "${it}ArrayExtensions" }
+
+    // Section 5.1 leaves Char out of the heaps.
+    private val heapTypes = listOf("Int", "Long", "Double")
+    private val heaps = heapTypes.flatMap { listOf("${it}MinHeap", "${it}MaxHeap", "${it}IndexedMinHeap", "${it}IndexedMaxHeap") }
 
     private fun names(generated: Map<String, String>) =
         generated.keys.map { it.removePrefix("ac_primitive_collections/").removeSuffix(".kt") }.toSet()
@@ -32,13 +37,13 @@ class CodegenTest {
 
     @Test
     fun generatesExactlyThePlannedLibraryFiles() {
-        assertEquals((pairHeaps + lists + conversions + deques).toSet(), names(main))
+        assertEquals((pairHeaps + lists + conversions + deques + arrays + heaps).toSet(), names(main))
     }
 
     @Test
     fun generatesExactlyThePlannedTestFiles() {
         assertEquals(
-            (pairHeaps.map { it + "Test" } + listTests + conversions.map { it + "Test" } + dequeTests).toSet(),
+            (pairHeaps.map { it + "Test" } + listTests + conversions.map { it + "Test" } + dequeTests + (arrays + heaps).map { it + "Test" }).toSet(),
             names(test),
         )
     }

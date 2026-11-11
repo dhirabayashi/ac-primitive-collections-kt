@@ -117,6 +117,59 @@ class AllocationTest {
     }
 
     @Test
+    fun singleHeapsWithinCapacity() {
+        val ints = IntMinHeap(200)
+        assertReachesZeroAllocation("int heap") {
+            for (i in 0 until 100) ints += i * 7919 % 101
+            sink += ints.replaceFirst(50).toLong()
+            while (ints.isNotEmpty()) sink += ints.removeFirst()
+        }
+        val doubles = DoubleMaxHeap(200)
+        assertReachesZeroAllocation("double max heap of values") {
+            for (i in 0 until 100) doubles.add((i * 7919 % 101).toDouble())
+            while (doubles.isNotEmpty()) sink += doubles.removeFirst().toLong()
+        }
+        val longs = LongMinHeap(200)
+        val bulk = LongArray(100) { (it * 7919 % 101).toLong() }
+        assertReachesZeroAllocation("long heap addAll") {
+            longs.addAll(bulk)
+            longs.forEachUnordered { sink += it }
+            longs.clear()
+        }
+    }
+
+    @Test
+    fun indexedHeapAsInDijkstra() {
+        val heap = LongIndexedMinHeap(100)
+        assertReachesZeroAllocation("indexed heap") {
+            for (i in 0 until 100) heap[i] = (i * 7919 % 101).toLong()
+            // Not `0 until 100 step 3`: `step` builds an IntRange and an IntProgression, which the JIT does not always remove.
+            var i = 0
+            while (i < 100) {
+                heap.decreaseKey(i, -1L)
+                i += 3
+            }
+            heap.remove(50)
+            heap.forEachUnordered { index, key -> sink += index + key }
+            while (heap.isNotEmpty()) {
+                sink += heap.firstKey()
+                sink += heap.removeFirst()
+            }
+        }
+    }
+
+    private val sortedInts = IntArray(1000) { it * 2 }
+
+    @Test
+    fun arraySearchesAndPermutations() {
+        assertReachesZeroAllocation("array bounds") { sink += sortedInts.lowerBound(sink.toInt() and 1023) + sortedInts.upperBound(77) }
+        val permutation = IntArray(8) { it }
+        assertReachesZeroAllocation("array nextPermutation") { if (permutation.nextPermutation()) sink++ }
+        val runs = IntArray(100) { it / 3 }
+        assertReachesZeroAllocation("array dedupe") { sink += runs.dedupe() + sortedInts.lowerBound(5, 10, 20) }
+    }
+
+    @Test
     fun dequeAsAQueueWithinCapacity() {
         val deque = IntDeque(128)
         assertReachesZeroAllocation("deque queue") {

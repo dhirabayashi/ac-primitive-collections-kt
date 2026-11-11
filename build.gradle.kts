@@ -51,6 +51,8 @@ sourceSets {
 
 dependencies {
     testImplementation(kotlin("test"))
+    // SourceRulesTest checks the bundler's reading of the library against the compiled classes.
+    testImplementation(project(":bundler"))
 }
 
 // The templates are valid Kotlin for Int (docs/PLAN.md, section 11). Compiling them keeps that true for the IDE.

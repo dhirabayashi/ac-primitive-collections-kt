@@ -26,6 +26,12 @@ class SourceFile(val name: String, val text: String) {
     val body: String
     val lexed: LexedSource = lex(text)
     val identifiers: Set<String>
+
+    /**
+     * Each public function's name, members' too, to the identifiers of its declared return type. Overloads merge.
+     * An inferred return type is not seen; the library's SourceRulesTest checks this against the compiled classes.
+     */
+    val publicReturnTypes: Map<String, Set<String>>
     val declarations: List<Declaration>
 
     init {
@@ -55,6 +61,7 @@ class SourceFile(val name: String, val text: String) {
         val bodyTokens = lexed.tokens.filter { it.start >= bodyStart }
         identifiers = bodyTokens.filter { it.isIdentifier }.mapTo(HashSet()) { it.text }
         declarations = parseTopLevel(bodyTokens)
+        publicReturnTypes = publicFunctions(bodyTokens).groupBy { it.first }.mapValues { (_, overloads) -> overloads.flatMapTo(HashSet()) { it.second } }
     }
 
     /** The body without comments, and without blank lines left behind. For `--strip-comments`. */
@@ -78,6 +85,83 @@ private val MODIFIERS = setOf(
     "public", "internal", "private", "protected", "inline", "operator", "infix", "tailrec", "external", "suspend",
     "const", "data", "value", "annotation", "enum", "sealed", "abstract", "open", "final", "expect", "actual", "fun", "lateinit",
 )
+
+/** Finds every public `fun` at any depth, with the identifiers of its declared return type. Internal and private ones are skipped. */
+private fun publicFunctions(tokens: List<Token>): List<Pair<String, Set<String>>> {
+    val found = ArrayList<Pair<String, Set<String>>>()
+    for (i in tokens.indices) {
+        if (tokens[i].text != "fun" || !tokens[i].isIdentifier || !isDeclarationKeyword(tokens, i)) continue
+        if (tokens.getOrNull(i + 1)?.text == "interface" || modifiersOf(tokens, i).any { it == "private" || it == "internal" }) continue
+        // The name is the identifier before the parameters' `(`, outside the type parameters.
+        var j = i + 1
+        var angle = 0
+        while (j < tokens.size && !(angle == 0 && tokens[j].text == "(" && tokens[j].kind == Token.Kind.SYMBOL)) {
+            if (tokens[j].text == "<") angle++
+            if (tokens[j].text == ">") angle--
+            j++
+        }
+        val name = tokens.getOrNull(j - 1)?.takeIf { it.isIdentifier }?.text ?: continue
+        j = skipBalanced(tokens, j)
+        val returnType = HashSet<String>()
+        if (tokens.getOrNull(j)?.text == ":") {
+            j++
+            var depth = 0
+            while (j < tokens.size) {
+                val token = tokens[j]
+                if (token.kind == Token.Kind.SYMBOL) {
+                    when (token.text) {
+                        "(", "<", "[" -> depth++
+                        ")", ">", "]" -> depth--
+                        "{", "}", "=" -> if (depth == 0) break
+                    }
+                } else if (token.isIdentifier) {
+                    if (depth == 0 && token.text in DECLARATION_STARTS) break
+                    returnType += token.text
+                }
+                j++
+            }
+        }
+        found += name to returnType
+    }
+    return found
+}
+
+/** Words that start the next declaration, which ends a bodiless function's return type. */
+private val DECLARATION_STARTS = setOf("fun", "val", "var", "class", "interface", "object", "override", "operator", "inline", "private", "internal")
+
+/** Returns the index after the bracket group that opens at [open]. */
+private fun skipBalanced(tokens: List<Token>, open: Int): Int {
+    var depth = 0
+    var j = open
+    while (j < tokens.size) {
+        val token = tokens[j]
+        if (token.kind == Token.Kind.SYMBOL) {
+            if (token.text == "(" || token.text == "[" || token.text == "{") depth++
+            if (token.text == ")" || token.text == "]" || token.text == "}") depth--
+        }
+        j++
+        if (depth == 0) break
+    }
+    return j
+}
+
+/** The modifiers before the keyword at [keywordIndex], skipping annotations. */
+private fun modifiersOf(tokens: List<Token>, keywordIndex: Int): List<String> {
+    val modifiers = ArrayList<String>()
+    var back = keywordIndex - 1
+    while (back >= 0) {
+        val text = tokens[back].text
+        if (text in MODIFIERS && tokens[back].isIdentifier) {
+            modifiers += text
+            back--
+        } else if (tokens[back].isIdentifier && tokens.getOrNull(back - 1)?.text == "@") {
+            back -= 2
+        } else {
+            break
+        }
+    }
+    return modifiers
+}
 
 /** Finds declarations at bracket depth zero, without a full parser. */
 private fun parseTopLevel(tokens: List<Token>): List<Declaration> {
